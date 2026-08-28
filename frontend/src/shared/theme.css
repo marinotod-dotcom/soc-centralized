@@ -4,6 +4,16 @@
   --accent:#2563eb; --ok:#16a34a;
   --navbar-bg:#1a1d27; --text-nav:#bac0d2;
 }
+
+[data-theme="dark"] {
+  --bg:#0f1117; --card:#171a23; --border:#2a2e3a; --text:#e5e7eb; --muted:#9ca3af;
+  --critical:#dc2626; --high:#ea580c; --medium:#ca8a04; --low:#64748b; --unknown:#4b5563;
+  --accent:#60a5fa; --ok:#16a34a;
+  --navbar-bg:#1a1d27; --text-nav:#bac0d2;
+}
+
+/* transition douce au moment du switch, pas de clignotement brutal */
+body, .card, .modal, .stat { transition: background-color .15s ease, color .15s ease, border-color .15s ease; }
 * { box-sizing:border-box; }
 body {
   margin:0; font-family:-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -41,6 +51,15 @@ body.login-page {
 .login-card button:hover { opacity:0.9; }
 .login-card button:disabled { opacity:0.6; cursor:default; }
 .login-card .error-msg { padding:0; margin-top:8px; }
+
+/* dark mode ---*/
+
+.theme-toggle {
+  background: transparent; border: 1px solid var(--border); color: var(--text);
+  width: 34px; height: 34px; border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; font-size: 16px;
+}
+.theme-toggle:hover { border-color: var(--accent); }
 
 /* ---- Top navigation (shared across all 3 pages) ---- */
 nav.topnav {
@@ -95,6 +114,10 @@ nav .logout:hover { opacity:0.88; }
 /* =========================================================
    REMEDIATIONS À EFFET MULTIPLE
    ========================================================= */
+
+.title {
+  margin-top: 45px;
+}
 
 .remediation-section {
   margin: 32px 0 28px;
@@ -253,13 +276,13 @@ nav .logout:hover { opacity:0.88; }
 }
 
 .remediation-cve {
-  background: #202d40;
-  color: #72b5ff;
+  background: #c8cdd3;
+  color: #07080b;
 }
 
 .remediation-more {
-  background: #252a34;
-  color: #9ca4b5;
+  background: #60646b;
+  color: #f9fafa;
 }
 
 
@@ -395,9 +418,11 @@ a:hover { text-decoration:underline; }
 .kev { display:inline-block; margin-left:6px; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:700; background:#7f1d1d; color:#fecaca; }
 
 .assets { display:flex; gap:4px; flex-wrap:wrap; max-width:220px; }
-.asset { background:#1e3a5f; color:#93c5fd; padding:2px 6px; border-radius:4px; font-size:11px; white-space:nowrap; }
+.asset { background:#c8cdd3; color:#07080b; padding:2px 6px; border-radius:4px; font-size:11px; white-space:nowrap; }
 .asset.more { background:transparent; color:var(--muted); cursor:pointer; }
 .asset.more:hover { color:var(--accent); }
+.asset { cursor: pointer; }
+.asset:hover { border-color: var(--accent); }
 
 .sub { display:block; font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--muted); margin-top:2px; }
 .fix { color:var(--text); }
@@ -419,6 +444,61 @@ a:hover { text-decoration:underline; }
 .modal-row .h { font-family:ui-monospace,Menlo,monospace; }
 .modal-row .c { color:var(--muted); font-size:12px; }
 
+/* ---- Modal détaillée (vulnérabilités : agent + condition + statut + actions) ---- */
+.modal:has(.modal-row-detailed) { max-width:560px; }
+
+.modal-row-detailed { padding:12px 0; border-bottom:1px solid var(--border); }
+.modal-row-detailed:last-child { border-bottom:none; }
+
+.modal-toolbar {
+  display: flex; gap: 8px; padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 48px; /* sous le modal-head sticky */
+  background: var(--card);
+}
+.modal-toolbar input, .modal-toolbar select {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 6px 10px; font-size: 12px; font-family: inherit;
+}
+.modal-toolbar input { flex: 1; }
+
+.modal-row-detailed .modal-row-top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:13px; }
+.modal-row-detailed .h { font-family:ui-monospace,Menlo,monospace; }
+.modal-row-detailed .c { color:var(--muted); font-size:12px; margin-left:auto; margin-right:8px; }
+
+.status-badge { font-size:11px; font-weight:700; padding:3px 10px; border-radius:999px; white-space:nowrap; }
+.status-badge.status-nouveau { background:var(--unknown); color:#fff; }
+.status-badge.status-valide  { background:var(--ok); color:#fff; }
+.status-badge.status-rejete  { background:var(--critical); color:#fff; }
+.status-badge.status-traite  { background:var(--accent); color:var(--bg); }
+
+.modal-row-actions { display:flex; gap:8px; margin-top:8px; }
+.modal-row-actions button { font-family:inherit; font-size:12px; padding:5px 12px; border-radius:6px; cursor:pointer; }
+.btn-ghost { background:transparent; border:1px solid var(--border); color:var(--muted); }
+.btn-ghost:hover { color:var(--text); border-color:var(--text); }
+.btn-primary { background:var(--accent); border:1px solid var(--accent); color:var(--bg); font-weight:600; }
+.btn-primary:hover { opacity:.85; }
+
+.modal-row-comments { margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+.comment-item {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px 10px; font-size: 12px; display: flex; flex-direction: column; gap: 2px;
+}
+.comment-item.comment-traitement { border-left: 3px solid var(--accent); }
+.comment-item.comment-validation { border-left: 3px solid var(--ok); }
+.comment-author { font-weight: 600; color: var(--text); }
+.comment-text { color: var(--text); }
+.comment-date { color: var(--muted); font-size: 11px; }
+
+.modal-row-comment-form { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.modal-row-comment-form[hidden] { display: none !important; }
+.modal-row-comment-form textarea {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 8px; font-size: 12px; font-family: inherit;
+  resize: vertical; min-height: 60px;
+}
+.modal-row-comment-form textarea.input-error { border-color: var(--critical); }
+.form-actions { display: flex; gap: 8px; justify-content: flex-end; }
 /* ---- Landing page (index.html) ---- */
 .landing-links { display:flex; gap:16px; flex-wrap:wrap; }
 .landing-links a { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:20px; min-width:200px; display:block; color:var(--text); }

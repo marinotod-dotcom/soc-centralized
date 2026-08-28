@@ -1,9 +1,13 @@
 import '../shared/theme.css';
+import { getComments, addComment } from '../shared/vulnComments.js';
+import { initThemeToggle } from '../shared/theme-toggle.js';
 import { highlightActiveNav } from '../shared/nav.js';
 import { escapeHtml } from '../shared/dom.js';
 
 const SEVERITY_COLOR = { Critical: 'var(--critical)', High: 'var(--high)', Medium: 'var(--medium)', Low: 'var(--low)' };
 const SEVERITY_WEIGHT = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+const STATUS_LABELS = { nouveau: 'Nouveau', valide: 'Validé', rejete: 'Rejeté', traite: 'Traité' };
+const STATUS_KEY = 'vulnStatuses';
 
 let allCves = [];
 let allAgents = [];
@@ -11,11 +15,15 @@ let currentTab = 'cve';
 let cveSort = { key: 'cvss', dir: -1 };
 let agentSort = { key: 'cve_count', dir: -1 };
 let meta = {};
+let carouselResizeHandler = null; // pour pouvoir retirer l'ancien listener au reload
 
 async function loadData() {
   document.getElementById('subtitle').textContent = 'Chargement de data.json…';
   try {
-    const res = await fetch('data.json', { cache: 'no-store' });
+    const res = await fetch('/data/action_plan/latest.json', {
+      cache: 'no-store',
+      credentials: 'include',
+    });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     const buckets = json?.aggregations?.vulnerabilities_by_agent?.buckets;
@@ -43,6 +51,14 @@ async function loadData() {
 // ---------------------------------------------------------------
 // Transform: raw Wazuh vulnerabilities_by_agent buckets
 // (one entry per paire CVE x agent) -> vue par CVE + vue par agent
+//
+// NOTE IMPORTANTE : vulnerability.package ne contient QUE `name` et
+// `condition` dans les exports Wazuh (vérifié sur data_S34_2026.json,
+// 8422 buckets, 0 avec un champ `version`). Il n'y a donc pas de "version
+// installée" fiable dans ces données — seulement le nom du paquet et la
+// condition qui a déclenché l'alerte (ex: "Package less than 3.10.12").
+// On garde ce champ sous le nom `condition` pour ne pas laisser croire
+// qu'on affiche une version réelle.
 // ---------------------------------------------------------------
 function transformBuckets(buckets) {
   const cveMap = new Map();
@@ -58,23 +74,24 @@ function transformBuckets(buckets) {
     const vuln = hit.data?.vulnerability || {};
     const severity = vuln.severity || 'None';
     const pkgName = vuln.package?.name || '—';
-    const pkgVersion = vuln.package?.version || '—';
+    const pkgCondition = vuln.package?.condition || '—';
     const title = vuln.title || cve;
     const cvssRaw = vuln.cvss?.cvss3?.base_score;
     const cvss = cvssRaw != null ? parseFloat(cvssRaw) : null;
 
     // --- CVE aggregation ---
     if (!cveMap.has(cve)) {
-      cveMap.set(cve, { cve, severity, cvss, title, packages: new Set(), versions: new Set(), agents: [], agentIdsSeen: new Set() });
+      cveMap.set(cve, { cve, severity, cvss, title, packages: new Set(), agents: [], agentIdsSeen: new Set() });
     }
     const c = cveMap.get(cve);
     if ((SEVERITY_WEIGHT[severity] ?? 0) > (SEVERITY_WEIGHT[c.severity] ?? 0)) c.severity = severity;
     if (cvss != null && (c.cvss == null || cvss > c.cvss)) c.cvss = cvss;
     c.packages.add(pkgName);
-    c.versions.add(pkgVersion);
     if (!c.agentIdsSeen.has(agentId)) {
       c.agentIdsSeen.add(agentId);
-      c.agents.push({ id: agentId, name: agentName, version: pkgVersion });
+      // on garde le paquet ET la condition propres à CET agent, pour ne
+      // jamais les recombiner avec ceux d'un autre agent plus tard.
+      c.agents.push({ id: agentId, name: agentName, package: pkgName, condition: pkgCondition });
     }
 
     // --- Agent aggregation ---
@@ -93,7 +110,6 @@ function transformBuckets(buckets) {
     cvss: c.cvss,
     title: c.title,
     packages: Array.from(c.packages).sort(),
-    versions: Array.from(c.versions).sort(),
     agentCount: c.agents.length,
     agents: c.agents,
   }));
@@ -136,63 +152,52 @@ function renderStats() {
   `;
 }
 
+// Regroupe par (paquet, condition) RÉELLEMENT observés ensemble sur un même
+// agent — corrige le bug qui recombinait tous les paquets d'une CVE avec
+// la condition de n'importe quel agent.
 function buildRemediations() {
   const remediationMap = new Map();
 
   for (const cve of allCves) {
     for (const agent of cve.agents) {
+      const key = `${agent.package}|${agent.condition}`;
 
-      // Un correctif est regroupé par paquet + version
-      for (const pkg of cve.packages) {
-
-        const key = `${pkg}|${agent.version}`;
-
-        if (!remediationMap.has(key)) {
-          remediationMap.set(key, {
-            package: pkg,
-            version: agent.version,
-            cves: new Set(),
-            agents: new Set()
-          });
-        }
-
-        const remediation = remediationMap.get(key);
-
-        remediation.cves.add(cve.cve);
-        remediation.agents.add(agent.id);
+      if (!remediationMap.has(key)) {
+        remediationMap.set(key, {
+          package: agent.package,
+          condition: agent.condition,
+          cves: new Set(),
+          agents: new Set(),
+        });
       }
+
+      const remediation = remediationMap.get(key);
+      remediation.cves.add(cve.cve);
+      remediation.agents.add(agent.id);
     }
   }
 
   return Array.from(remediationMap.values())
-    .filter(r => r.cves.size > 1)
-    .sort((a, b) => {
-      return b.cves.size - a.cves.size;
-    });
+    .filter((r) => r.cves.size > 1)
+    .sort((a, b) => b.cves.size - a.cves.size);
 }
 
 function renderRemediations() {
   const track = document.getElementById('remediationTrack');
-
   if (!track) return;
 
   const remediations = buildRemediations();
 
   track.innerHTML = remediations
     .map((r) => {
-
       const cveCount = r.cves.size;
       const hostCount = r.agents.size;
 
       return `
         <article class="remediation-card">
-
           <div class="remediation-card-header">
             <h3>${escapeHtml(r.package)}</h3>
-
-            <span class="cve-count">
-              ${cveCount} CVE
-            </span>
+            <span class="cve-count">${cveCount} CVE</span>
           </div>
 
           <p class="remediation-description">
@@ -204,29 +209,17 @@ function renderRemediations() {
           </p>
 
           <div class="remediation-version">
-            Version détectée :
-            <strong>${escapeHtml(r.version)}</strong>
+            Condition détectée :
+            <strong>${escapeHtml(r.condition)}</strong>
           </div>
 
           <div class="remediation-cves">
             ${Array.from(r.cves)
               .slice(0, 5)
-              .map(cve => `
-                <span class="remediation-cve">
-                  ${escapeHtml(cve)}
-                </span>
-              `)
+              .map((cve) => `<span class="remediation-cve">${escapeHtml(cve)}</span>`)
               .join('')}
-
-            ${
-              cveCount > 5
-                ? `<span class="remediation-more">
-                    +${cveCount - 5}
-                  </span>`
-                : ''
-            }
+            ${cveCount > 5 ? `<span class="remediation-more">+${cveCount - 5}</span>` : ''}
           </div>
-
         </article>
       `;
     })
@@ -236,12 +229,25 @@ function renderRemediations() {
 }
 
 function initRemediationCarousel() {
-
   const track = document.getElementById('remediationTrack');
-  const prev = document.getElementById('remediationPrev');
-  const next = document.getElementById('remediationNext');
-
+  let prev = document.getElementById('remediationPrev');
+  let next = document.getElementById('remediationNext');
   if (!track || !prev || !next) return;
+
+  // On repart de boutons "propres" à chaque appel (clone sans listeners),
+  // sinon un clic sur "Recharger" empile un nouveau handler à chaque fois
+  // et le carrousel finit par avancer de plusieurs cases par clic.
+  const prevClone = prev.cloneNode(true);
+  const nextClone = next.cloneNode(true);
+  prev.replaceWith(prevClone);
+  next.replaceWith(nextClone);
+  prev = prevClone;
+  next = nextClone;
+
+  if (carouselResizeHandler) {
+    window.removeEventListener('resize', carouselResizeHandler);
+    carouselResizeHandler = null;
+  }
 
   const cards = track.querySelectorAll('.remediation-card');
 
@@ -250,6 +256,8 @@ function initRemediationCarousel() {
     next.style.display = 'none';
     return;
   }
+  prev.style.display = '';
+  next.style.display = '';
 
   let currentIndex = 0;
 
@@ -260,20 +268,13 @@ function initRemediationCarousel() {
   }
 
   function updateCarousel() {
-
     const cardsPerView = getCardsPerView();
-    const maxIndex = Math.max(
-      0,
-      cards.length - cardsPerView
-    );
-
+    const maxIndex = Math.max(0, cards.length - cardsPerView);
     currentIndex = Math.min(currentIndex, maxIndex);
 
     const cardWidth = cards[0].getBoundingClientRect().width;
     const gap = 16;
-
-    track.style.transform =
-      `translateX(-${currentIndex * (cardWidth + gap)}px)`;
+    track.style.transform = `translateX(-${currentIndex * (cardWidth + gap)}px)`;
 
     prev.disabled = currentIndex === 0;
     next.disabled = currentIndex >= maxIndex;
@@ -287,20 +288,16 @@ function initRemediationCarousel() {
   });
 
   next.addEventListener('click', () => {
-
     const cardsPerView = getCardsPerView();
-    const maxIndex = Math.max(
-      0,
-      cards.length - cardsPerView
-    );
-
+    const maxIndex = Math.max(0, cards.length - cardsPerView);
     if (currentIndex < maxIndex) {
       currentIndex++;
       updateCarousel();
     }
   });
 
-  window.addEventListener('resize', updateCarousel);
+  carouselResizeHandler = updateCarousel;
+  window.addEventListener('resize', carouselResizeHandler);
 
   updateCarousel();
 }
@@ -321,7 +318,6 @@ function renderCveTable() {
       <th data-key="cve">CVE</th>
       <th data-key="cvss">CVSS</th>
       <th>Paquet(s)</th>
-      <th>Version(s)</th>
       <th data-key="agentCount">Agents touchés</th>
     </tr>`;
   thead.querySelectorAll('th[data-key]').forEach((th) => {
@@ -346,9 +342,8 @@ function renderCveTable() {
     .map((c) => {
       const color = SEVERITY_COLOR[c.severity] || 'var(--unknown)';
       const pkgPreview = c.packages.slice(0, 2).map(escapeHtml).join(', ') + (c.packages.length > 2 ? `, +${c.packages.length - 2}` : '');
-      const versionPreview = c.versions.slice(0, 2).map(escapeHtml).join(', ') + (c.versions.length > 2 ? `, +${c.versions.length - 2}` : '');
       const agentChips =
-        c.agents.slice(0, previewCount).map((a) => `<span class="asset">${escapeHtml(a.name)}</span>`).join('') +
+        c.agents.slice(0, previewCount).map((a) => `<span class="asset" data-cve="${escapeHtml(c.cve)}">${escapeHtml(a.name)}</span>`).join('') +
         (c.agents.length > previewCount ? `<span class="asset more" data-cve="${escapeHtml(c.cve)}">+${c.agents.length - previewCount}</span>` : '');
       const searchText = [c.cve, c.title, ...c.packages, ...c.agents.map((a) => a.name)].join(' ').toLowerCase();
 
@@ -358,25 +353,152 @@ function renderCveTable() {
         <td>${escapeHtml(c.cve)}<span class="sub">${escapeHtml(c.title)}</span></td>
         <td>${c.cvss != null ? c.cvss.toFixed(1) : '—'}</td>
         <td>${pkgPreview || '—'}</td>
-        <td>${versionPreview || '—'}</td>
         <td><div class="assets">${agentChips || '<span class="asset">—</span>'}</div></td>
       </tr>`;
     })
     .join('');
 
-  document.getElementById('tbody').querySelectorAll('.asset.more').forEach((el) => {
-    el.addEventListener('click', () => openCveModal(el.dataset.cve));
+  document.getElementById('tbody').querySelectorAll('.asset[data-cve]').forEach((el) => {
+      el.addEventListener('click', () => openCveModal(el.dataset.cve));
   });
+}
+
+function loadStatuses() {
+  try { return JSON.parse(localStorage.getItem(STATUS_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveStatuses(statuses) {
+  localStorage.setItem(STATUS_KEY, JSON.stringify(statuses));
+}
+function getStatus(cve, agentId) {
+  return loadStatuses()[`${cve}|${agentId}`] || 'nouveau';
+}
+function setStatus(cve, agentId, status) {
+  const statuses = loadStatuses();
+  statuses[`${cve}|${agentId}`] = status;
+  saveStatuses(statuses);
 }
 
 function openCveModal(cveId) {
   const c = allCves.find((x) => x.cve === cveId);
   if (!c) return;
   document.getElementById('modalTitle').textContent = `${c.cve} — ${c.agents.length} agents`;
-  document.getElementById('modalBody').innerHTML = c.agents
-    .map((a) => `<div class="modal-row"><span class="h">${escapeHtml(a.name)}</span><span class="c">${escapeHtml(a.id)} · v${escapeHtml(a.version)}</span></div>`)
-    .join('');
+  document.getElementById('modalSearch').value = '';
+  document.getElementById('modalStatusFilter').value = '';
+  renderCveModalBody(c);
   document.getElementById('vulnModal').classList.add('open');
+}
+
+function renderCveModalBody(c) {
+  document.getElementById('modalBody').innerHTML = c.agents
+    .map((a) => {
+      const status = getStatus(c.cve, a.id);
+      const comments = getComments(c.cve, a.id);
+      const searchText = `${a.name} ${a.id}`.toLowerCase();
+
+      const commentsHtml = comments.length
+        ? `<div class="modal-row-comments">
+            ${comments.map((cm) => `
+              <div class="comment-item comment-${cm.type}">
+                <span class="comment-author">${escapeHtml(cm.author)}</span>
+                <span class="comment-text">${escapeHtml(cm.text)}</span>
+                <span class="comment-date">${new Date(cm.createdAt).toLocaleString('fr-FR')}</span>
+              </div>`).join('')}
+          </div>`
+        : '';
+
+      return `
+      <div class="modal-row-detailed" data-status="${status}" data-search="${escapeHtml(searchText)}">
+        <div class="modal-row-top">
+          <span class="h">${escapeHtml(a.name)}</span>
+          <span class="c">${escapeHtml(a.id)} · ${escapeHtml(a.condition)}</span>
+          <span class="status-badge status-${status}">${STATUS_LABELS[status]}</span>
+        </div>
+
+        ${commentsHtml}
+
+        <div class="modal-row-actions">
+          <button class="btn-ghost" data-toggle-form="traite">Marquer traité</button>
+          <button class="btn-primary" data-toggle-form="valide">Valider</button>
+        </div>
+
+        <div class="modal-row-comment-form" data-form="traite" hidden>
+          <textarea placeholder="Commentaire de traitement (obligatoire)..."></textarea>
+          <div class="form-actions">
+            <button class="btn-ghost" data-cancel-form>Annuler</button>
+            <button class="btn-primary" data-submit-form="traite" data-cve="${escapeHtml(c.cve)}" data-agent="${escapeHtml(a.id)}">Enregistrer</button>
+          </div>
+        </div>
+
+        <div class="modal-row-comment-form" data-form="valide" hidden>
+          <textarea placeholder="Réponse de validation (optionnel)..."></textarea>
+          <div class="form-actions">
+            <button class="btn-ghost" data-cancel-form>Annuler</button>
+            <button class="btn-primary" data-submit-form="valide" data-cve="${escapeHtml(c.cve)}" data-agent="${escapeHtml(a.id)}">Valider</button>
+          </div>
+        </div>
+      </div>`;
+    })
+    .join('');
+
+  wireCveModalRowEvents(c);
+  filterModalRows();
+}
+
+function wireCveModalRowEvents(c) {
+  const body = document.getElementById('modalBody');
+
+  // Ouvre/ferme le formulaire au clic sur "Marquer traité" / "Valider"
+  body.querySelectorAll('button[data-toggle-form]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const row = btn.closest('.modal-row-detailed');
+      const formType = btn.dataset.toggleForm;
+      const targetForm = row.querySelector(`.modal-row-comment-form[data-form="${formType}"]`);
+      const wasHidden = targetForm.hidden;
+
+      row.querySelectorAll('.modal-row-comment-form').forEach((f) => { f.hidden = true; });
+      targetForm.hidden = !wasHidden; // reclique sur le même bouton = referme le formulaire
+      if (!targetForm.hidden) targetForm.querySelector('textarea')?.focus();
+    });
+  });
+
+  body.querySelectorAll('[data-cancel-form]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      btn.closest('.modal-row-comment-form').hidden = true;
+    });
+  });
+
+  body.querySelectorAll('[data-submit-form]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const { submitForm: action, cve, agent } = btn.dataset;
+      const form = btn.closest('.modal-row-comment-form');
+      const textarea = form.querySelector('textarea');
+      const text = textarea.value.trim();
+
+      if (action === 'traite' && !text) {
+        textarea.classList.add('input-error');
+        textarea.focus();
+        return; // commentaire obligatoire pour "Marquer traité"
+      }
+
+      addComment(cve, agent, {
+        type: action === 'traite' ? 'traitement' : 'validation',
+        text: text || '(sans commentaire)',
+      });
+      setStatus(cve, agent, action);
+      renderCveModalBody(c); // re-render complet : nouveau badge + commentaire affiché
+    });
+  });
+}
+
+function filterModalRows() {
+  const q = (document.getElementById('modalSearch')?.value || '').toLowerCase();
+  const statusFilter = document.getElementById('modalStatusFilter')?.value || '';
+  document.querySelectorAll('#modalBody .modal-row-detailed').forEach((row) => {
+    const matchesQuery = !q || row.dataset.search.includes(q);
+    const matchesStatus = !statusFilter || row.dataset.status === statusFilter;
+    row.classList.toggle('row-hidden', !(matchesQuery && matchesStatus));
+  });
 }
 
 // ---------------- Vue par agent ----------------
@@ -411,7 +533,7 @@ function renderAgentTable() {
     .map((a) => {
       const color = SEVERITY_COLOR[a.maxSeverity] || 'var(--unknown)';
       const cvePreview =
-        a.cves.slice(0, previewCount).map((c) => `<span class="asset">${escapeHtml(c.cve)}</span>`).join('') +
+        a.cves.slice(0, previewCount).map((c) => `<span class="asset" data-agent-id="${escapeHtml(a.id)}">${escapeHtml(c.cve)}</span>`).join('') +
         (a.cves.length > previewCount ? `<span class="asset more" data-agent-id="${escapeHtml(a.id)}">+${a.cves.length - previewCount}</span>` : '');
       const searchText = [a.name, a.id, ...a.cves.map((c) => c.cve)].join(' ').toLowerCase();
 
@@ -425,7 +547,7 @@ function renderAgentTable() {
     })
     .join('');
 
-  document.getElementById('tbody').querySelectorAll('.asset.more').forEach((el) => {
+  document.getElementById('tbody').querySelectorAll('.asset[data-agent-id]').forEach((el) => {
     el.addEventListener('click', () => openAgentModal(el.dataset.agentId));
   });
 }
@@ -456,9 +578,9 @@ function exportMarkdown() {
   let md = `# Vulnérabilités — ${meta.date_from ? meta.date_from.slice(0, 10) : ''} → ${meta.date_to ? meta.date_to.slice(0, 10) : ''}\n\n`;
   md += `${allCves.length} CVE distinctes sur ${allAgents.length} agents.\n\n`;
   if (currentTab === 'cve') {
-    md += `| CVE | Sévérité | CVSS | Paquet(s) | Version(s) | Agents touchés |\n|---|---|---|---|---|---|\n`;
+    md += `| CVE | Sévérité | CVSS | Paquet(s) | Agents touchés |\n|---|---|---|---|---|\n`;
     [...allCves].sort((a, b) => (b.cvss ?? 0) - (a.cvss ?? 0)).forEach((c) => {
-      md += `| ${c.cve} | ${c.severity} | ${c.cvss ?? '—'} | ${c.packages.join(', ')} | ${c.versions.join(', ')} | ${c.agentCount} |\n`;
+      md += `| ${c.cve} | ${c.severity} | ${c.cvss ?? '—'} | ${c.packages.join(', ')} | ${c.agentCount} |\n`;
     });
   } else {
     md += `| Agent | ID | Sévérité max | Nb CVE |\n|---|---|---|---|\n`;
@@ -483,7 +605,9 @@ document.getElementById('vulnModal').addEventListener('click', (e) => {
 document.querySelector('#vulnModal .modal-head button').addEventListener('click', () => {
   document.getElementById('vulnModal').classList.remove('open');
 });
+document.getElementById('modalSearch').addEventListener('input', filterModalRows);
+document.getElementById('modalStatusFilter').addEventListener('change', filterModalRows);
 
 highlightActiveNav();
+initThemeToggle();
 loadData();
-

@@ -2,12 +2,15 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<script>
+  document.documentElement.setAttribute('data-theme', localStorage.getItem('dashboardTheme') || 'dark');
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vulnérabilités détectées</title>
 </head>
 <body>
 
-<h1>Vulnérabilités détectées</h1>
+<h1 class="title">Vulnérabilités détectées</h1>
 <div class="subtitle" id="subtitle">Chargement de data.json…</div>
 <div class="subtitle" id="period" style="margin-top:-16px;"></div>
 
@@ -24,6 +27,7 @@
   </div>
 
   <div class="nav-side nav-right">
+    <button class="theme-toggle" id="themeToggle" aria-label="Changer de thème">☀️</button>
     <button class="logout">Log Out</button>
   </div>
 </nav>
@@ -87,6 +91,16 @@
     <div class="modal-head">
       <strong id="modalTitle">Détail</strong>
       <button aria-label="Fermer">×</button>
+    </div>
+    <div class="modal-toolbar" id="modalToolbar">
+      <input id="modalSearch" placeholder="Rechercher un agent..." />
+      <select id="modalStatusFilter">
+        <option value="">Tous statuts</option>
+        <option value="nouveau">Nouveau</option>
+        <option value="valide">Validé</option>
+        <option value="rejete">Rejeté</option>
+        <option value="traite">Traité</option>
+      </select>
     </div>
     <div class="modal-body" id="modalBody"></div>
   </div>
