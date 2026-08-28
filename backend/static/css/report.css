@@ -1,0 +1,406 @@
+/* ============================================================
+   Wazuh Weekly Report — Stylesheet (SmartOne.ai style)
+   ============================================================ */
+
+/* ── Page setup ─────────────────────────────────────────── */
+@page {
+    size: A4;
+    margin: 15mm 20mm 18mm 20mm;
+}
+
+@page cover {
+    margin: 0;
+}
+
+/* ── Reset & base ────────────────────────────────────────── */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 11px;
+    color: #1a1a1a;
+    line-height: 1.5;
+    background: #ffffff;
+    position: relative;
+}
+
+body::before {
+    content: "CONFIDENTIEL";
+
+    position: fixed;
+    top: 50%;
+    left: 50%;
+
+    transform: translate(-50%, -50%) rotate(-45deg);
+
+    font-size: 110px;
+    font-weight: bold;
+    color: rgba(150, 150, 150, 0.10);
+
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+/* ================================================================
+   PAGE DE GARDE
+   ================================================================ */
+
+.cover-page {
+    page: cover;
+    page-break-after: always;
+    padding: 0;
+    position: relative;
+    min-height: 277mm;
+}
+
+/* ── Bande supérieure logo ───────────────────────────────── */
+.cover-topbar {
+    display: table;
+    width: 100%;
+    padding: 14px 20mm;
+    border-bottom: 1px solid #d0d0d0;
+}
+
+.cover-topbar__left {
+    display: table-cell;
+    vertical-align: middle;
+    text-align: left;
+}
+
+.cover-topbar__right {
+    display: table-cell;
+    vertical-align: middle;
+    text-align: right;
+    font-size: 10px;
+    color: #444;
+    line-height: 1.4;
+}
+
+/* Logo text SmartOne.ai */
+#logo-group {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+}
+.logo-mark {
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 6px;
+}
+.logo-smart{
+    width: 40px;
+    height: auto;
+    margin-right: 10px;
+}
+
+.logo-mark svg {
+    width: 36px;
+    height: 36px;
+}
+
+.logo-text {
+    display: block;
+    font-size: 18px;
+    font-weight: bold;
+    color: #1a1a1a;
+}
+
+/* ── Référence document ──────────────────────────────────── */
+.cover-docref {
+    padding: 10px 20mm 0;
+    font-size: 10px;
+    color: #1565c0;
+    font-weight: bold;
+}
+
+.cover-docref-bar {
+    margin: 6px 20mm 0;
+    height: 3px;
+    width: 60px;
+    background: #1565c0;
+}
+
+/* ── Zone titre centrale ─────────────────────────────────── */
+.cover-title-zone {
+    margin: 50px 20mm 30px;
+    text-align: center;
+}
+
+.cover-title-box {
+    display: inline-block;
+    border: 2px solid #1a1a1a;
+    padding: 14px 40px;
+    text-align: center;
+}
+
+.cover-title-box h1 {
+    font-size: 20px;
+    font-weight: bold;
+    color: #1a1a1a;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    font-variant: small-caps;
+}
+
+.cover-confidential {
+    margin-top: 10px;
+    font-style: italic;
+    font-size: 11px;
+    color: #555;
+    text-align: center;
+}
+
+/* ── Corps de la page de garde ───────────────────────────── */
+.cover-body {
+    padding: 0 20mm;
+}
+
+.cover-section-label {
+    font-weight: bold;
+    font-size: 11px;
+    margin-bottom: 6px;
+    margin-top: 20px;
+    color: #1a1a1a;
+}
+
+/* ── Tables page de garde (distribution + infos générales) ── */
+.cover-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10.5px;
+    margin-bottom: 4px;
+}
+
+.cover-table thead tr {
+    background: #1a1a1a;
+    color: #ffffff;
+}
+
+.cover-table thead th {
+    padding: 7px 10px;
+    text-align: left;
+    font-weight: bold;
+    font-size: 10.5px;
+    border: 1px solid #1a1a1a;
+}
+
+.cover-table tbody td {
+    padding: 6px 10px;
+    border: 1px solid #999;
+    color: #1a1a1a;
+    vertical-align: top;
+}
+
+.cover-table tbody tr:nth-child(even) td {
+    background: #f5f5f5;
+}
+
+/* ── Résumé ──────────────────────────────────────────────── */
+.cover-resume {
+    margin-top: 18px;
+    font-size: 10.5px;
+}
+
+.cover-resume strong {
+    font-weight: bold;
+}
+
+/* ================================================================
+   PAGES CONTENU (2+)
+   ================================================================ */
+
+/* ── En-tête des pages de contenu ────────────────────────── */
+.content-header {
+    display: table;
+    width: 100%;
+    border-bottom: 2px solid #1565c0;
+    padding-bottom: 8px;
+    margin-bottom: 20px;
+}
+
+.content-header__left {
+    display: table-cell;
+    vertical-align: bottom;
+}
+
+.content-header__logo-text {
+    font-size: 13px;
+    font-weight: bold;
+    color: #1a1a1a;
+}
+
+.content-header__right {
+    display: table-cell;
+    vertical-align: bottom;
+    text-align: right;
+    font-size: 9px;
+    color: #666;
+}
+
+/* ── Section headings ────────────────────────────────────── */
+.title_vuln {
+    color: black;
+    font-size: 20px;
+    font-weight: bold;
+    margin-top: 40px;
+}
+.title_logs {
+    color: black;
+    font-size: 20px;
+    font-weight: bold;
+}
+.title_cis {
+    color: black;
+    font-size: 20px;
+    font-weight: bold;
+    margin-top: 40px;
+}
+.cis_score {
+    font-weight: bold;
+}
+.section-heading {
+    background: #1a1a1a;
+    color: #ffffff;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: bold;
+    margin: 22px 0 10px;
+    page-break-after: avoid;
+}
+
+/* ── KPI grid ────────────────────────────────────────────── */
+.kpi-grid {
+    display: table;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 8px;
+    margin-bottom: 4px;
+}
+
+.kpi-row {
+    display: table-row;
+}
+
+.kpi-card {
+    display: table-cell;
+    width: 19%;
+    background: #f8fafc;
+    border: 1px solid #d0d8e4;
+    border-top: 3px solid #2a2e33;
+    padding: 10px 8px;
+    text-align: center;
+    vertical-align: top;
+}
+
+.kpi-card--danger { border-top-color: #c62828; }
+.kpi-card--warn   { border-top-color: #e65100; }
+.kpi-card--ok     { border-top-color: #2e7d32; }
+
+.kpi-card__label {
+    font-size: 8.5px;
+    font-weight: bold;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 5px;
+}
+
+.kpi-card__value {
+    font-size: 22px;
+    font-weight: bold;
+    color: #1a1a1a;
+}
+
+/* ── Tables contenu ──────────────────────────────────────── */
+table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10.5px;
+    margin-bottom: 6px;
+    page-break-inside: avoid;
+}
+
+table.data-table thead tr {
+    background: #1a1a1a;
+    color: #ffffff;
+}
+
+table.data-table thead th {
+    padding: 7px 10px;
+    text-align: left;
+    font-weight: bold;
+    font-size: 10px;
+    border: 1px solid #1a1a1a;
+}
+
+table.data-table thead th:last-child {
+    text-align: right;
+}
+
+table.data-table tbody td {
+    padding: 7px 10px;
+    border: 1px solid #c8c8c8;
+    color: #1a1a1a;
+    vertical-align: middle;
+}
+
+table.data-table tbody td:last-child {
+    text-align: right;
+    font-weight: bold;
+}
+
+table.data-table tbody tr:nth-child(even) td {
+    background: #f5f5f5;
+}
+
+/* ── Severity badges ─────────────────────────────────────── */
+.badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.badge--critical { background: #fde8e8; color: #b71c1c; border: 1px solid #ef9a9a; }
+.badge--high     { background: #fff3e0; color: #bf360c; border: 1px solid #ffcc80; }
+.badge--medium   { background: #fffde7; color: #f57f17; border: 1px solid #fff176; }
+.badge--low      { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+.badge--info     { background: #e3f2fd; color: #0d47a1; border: 1px solid #90caf9; }
+
+/* ── CVE mono style ──────────────────────────────────────── */
+.cve-id {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 10px;
+    font-weight: bold;
+    color: #1565c0;
+}
+
+/* ── Rank ────────────────────────────────────────────────── */
+.rank {
+    font-weight: bold;
+    color: #888;
+    font-size: 10px;
+    text-align: center !important;
+    width: 28px;
+}
+
+/* ── Pied de page contenu ────────────────────────────────── */
+.content-footer {
+    margin-top: 30px;
+    padding-top: 8px;
+    border-top: 1px solid #ccc;
+    font-size: 9px;
+    color: #888;
+    font-style: italic;
+    text-align: center;
+}
+
+/* ── Page break ──────────────────────────────────────────── */
+.page-break { page-break-before: always; }
+.no-break   { page-break-inside: avoid; }

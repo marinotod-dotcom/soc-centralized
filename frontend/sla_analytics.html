@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vulnérabilités — Vue d'ensemble</title>
+</head>
+<body>
+
+<h1>Vulnérabilités — Vue d'ensemble</h1>
+<div class="subtitle" id="subtitle">Chargement...</div>
+
+<nav class="topnav">
+  <div class="nav-brand">
+    <img class="logo" src="/assets/Q1e6wb5hCU58sRKYk2GGndhxJPw.png" alt="logoSmartOne">
+    <span class="brand-name">SmartOne.ai</span>
+  </div>
+
+  <div class="nav-links">
+    <a href="/action_plan.html" data-page="action_plan">Plan d'action</a>
+    <a href="/coverage.html" data-page="coverage">Couverture</a>
+    <a href="/sla_analytics.html" data-page="sla_analytics">Vue d'ensemble</a>
+  </div>
+
+  <div class="nav-side nav-right">
+    <button class="logout">Log Out</button>
+  </div>
+</nav>
+
+<div class="stats" id="stats"></div>
+
+<div class="grid2">
+  <div class="card">
+    <h2>CVE validés par criticité <span style="font-weight:400;text-transform:none;">— batch de la semaine dernière</span></h2>
+    <div id="sevChart"><div class="load-msg">Chargement...</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Machines corrigées</h2>
+    <div id="machinesChart"><div class="load-msg">Chargement...</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Vulnérabilités validées par jour — cette semaine (lundi → vendredi)</h2>
+  <div id="trendChart"><div class="load-msg">Chargement...</div></div>
+</div>
+
+<script type="module" src="/src/pages/sla_analytics.js"></script>
+</body>
+</html>

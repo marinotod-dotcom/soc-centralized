@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vulnérabilités détectées</title>
+</head>
+<body>
+
+<h1>Vulnérabilités détectées</h1>
+<div class="subtitle" id="subtitle">Chargement de data.json…</div>
+<div class="subtitle" id="period" style="margin-top:-16px;"></div>
+
+<nav class="topnav">
+  <div class="nav-brand">
+    <img class="logo" src="/assets/Q1e6wb5hCU58sRKYk2GGndhxJPw.png" alt="logoSmartOne">
+    <span class="brand-name">SmartOne.ai</span>
+  </div>
+
+  <div class="nav-links">
+    <a href="/action_plan.html" data-page="action_plan">Plan d'action</a>
+    <a href="/coverage.html" data-page="coverage">Couverture</a>
+    <a href="/sla_analytics.html" data-page="sla_analytics">Vue d'ensemble</a>
+  </div>
+
+  <div class="nav-side nav-right">
+    <button class="logout">Log Out</button>
+  </div>
+</nav>
+
+<div class="empty-state" id="emptyState" style="display:none;">
+  Impossible de charger <code>data.json</code>. Placez-le à côté de cette page et servez-la
+  via un serveur local — l'ouverture directe en <code>file://</code> bloque le chargement
+  dans la plupart des navigateurs.
+  <div id="emptyReason" style="margin-top:8px; font-size:12px;"></div>
+</div>
+
+<div id="content" style="display:none;">
+  <div class="stats" id="stats"></div>
+
+  <section class="remediation-section">
+  <div class="section-title">
+    <h2>Remédiations à effet multiple</h2>
+    <span>— un correctif, plusieurs CVE résolus</span>
+  </div>
+
+  <div class="remediation-carousel">
+    <button class="carousel-btn prev" id="remediationPrev" aria-label="Précédent">
+      ‹
+    </button>
+
+    <div class="remediation-track-wrapper">
+      <div class="remediation-track" id="remediationTrack"></div>
+    </div>
+
+    <button class="carousel-btn next" id="remediationNext" aria-label="Suivant">
+      ›
+    </button>
+  </div>
+</section>
+
+  <div class="toolbar">
+    <span style="display:flex;gap:4px;">
+      <button class="tab active" data-tab="cve" style="cursor:pointer;">Par CVE</button>
+      <button class="tab" data-tab="agent" style="cursor:pointer;">Par agent</button>
+    </span>
+    <input id="search" placeholder="Rechercher (CVE, agent, paquet...)" />
+    <select id="sevFilter">
+      <option value="">Toutes sévérités</option>
+      <option value="Critical">Critical</option>
+      <option value="High">High</option>
+      <option value="Medium">Medium</option>
+      <option value="Low">Low</option>
+    </select>
+    <button id="reloadBtn">↻ Recharger</button>
+    <button id="exportBtn">Copier en Markdown</button>
+  </div>
+
+  <table id="table">
+    <thead id="thead"></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<div class="modal-overlay" id="vulnModal">
+  <div class="modal">
+    <div class="modal-head">
+      <strong id="modalTitle">Détail</strong>
+      <button aria-label="Fermer">×</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script type="module" src="/src/pages/vulnerabilites.js"></script>
+</body>
+</html>
+
