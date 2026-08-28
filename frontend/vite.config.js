@@ -9,7 +9,6 @@ export default defineConfig({
         sla_analytics: resolve(__dirname, 'sla_analytics.html'),
         coverage: resolve(__dirname, 'coverage.html'),
         action_plan: resolve(__dirname, 'action_plan.html'),
-        vulnerabilites: resolve(__dirname, 'vulnerabilites.html'),
       },
     },
   },
