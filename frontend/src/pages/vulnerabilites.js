@@ -45,6 +45,7 @@ async function loadData() {
     document.getElementById('emptyState').style.display = 'none';
     document.getElementById('content').style.display = 'block';
     renderStats();
+    populatePackageFilter();
     renderPeriod();
     renderRemediations();
     renderTab();
@@ -486,7 +487,7 @@ function renderCveTable() {
       const searchText = [c.cve, c.title, ...c.packages, ...c.agents.map((a) => a.name)].join(' ').toLowerCase();
 
       return `
-      <tr data-sev="${escapeHtml(c.severity)}" data-text="${escapeHtml(searchText)}">
+      <tr data-sev="${escapeHtml(c.severity)}" data-packages="${escapeHtml(c.packages.join('|'))}" data-text="${escapeHtml(searchText)}">
         <td><span class="badge" style="background:${color}">${escapeHtml(c.severity)}</span></td>
         <td>${escapeHtml(c.cve)}<span class="sub">${escapeHtml(c.title)}</span></td>
         <td>${c.cvss != null ? c.cvss.toFixed(1) : '—'}</td>
@@ -847,29 +848,31 @@ function openAgentModal(agentId) {
 function filterRows() {
   const q = document.getElementById('search').value.toLowerCase();
   const sev = document.getElementById('sevFilter').value;
+  const pkg = document.getElementById('paqFilter').value;
+
   document.querySelectorAll('#table tbody tr').forEach((row) => {
     const text = row.dataset.text || '';
-    const match = (!q || text.includes(q)) && (!sev || row.dataset.sev === sev);
-    row.classList.toggle('row-hidden', !match);
+    const rowPackages = row.dataset.packages ? row.dataset.packages.split('|') : [];
+
+    const matchesQuery = !q || text.includes(q);
+    const matchesSev = !sev || row.dataset.sev === sev;
+    // vue "Par agent" : pas de data-packages -> le filtre paquet est ignoré, pas bloquant
+    const matchesPkg = !pkg || currentTab !== 'cve' || rowPackages.includes(pkg);
+
+    row.classList.toggle('row-hidden', !(matchesQuery && matchesSev && matchesPkg));
   });
 }
 
-// ---------------- Export markdown ----------------
-function exportMarkdown() {
-  let md = `# Vulnérabilités — ${meta.date_from ? meta.date_from.slice(0, 10) : ''} → ${meta.date_to ? meta.date_to.slice(0, 10) : ''}\n\n`;
-  md += `${allCves.length} CVE distinctes sur ${allAgents.length} agents.\n\n`;
-  if (currentTab === 'cve') {
-    md += `| CVE | Sévérité | CVSS | Paquet(s) | Agents touchés |\n|---|---|---|---|---|\n`;
-    [...allCves].sort((a, b) => (b.cvss ?? 0) - (a.cvss ?? 0)).forEach((c) => {
-      md += `| ${c.cve} | ${c.severity} | ${c.cvss ?? '—'} | ${c.packages.join(', ')} | ${c.agentCount} |\n`;
-    });
-  } else {
-    md += `| Agent | ID | Sévérité max | Nb CVE |\n|---|---|---|---|\n`;
-    [...allAgents].sort((a, b) => b.cveCount - a.cveCount).forEach((a) => {
-      md += `| ${a.name} | ${a.id} | ${a.maxSeverity} | ${a.cveCount} |\n`;
-    });
-  }
-  navigator.clipboard.writeText(md);
+function populatePackageFilter() {
+  const pkgSet = new Set();
+  allCves.forEach((c) => c.packages.forEach((p) => pkgSet.add(p)));
+  const select = document.getElementById('paqFilter');
+  if (!select) return;
+  const current = select.value; // préserve la sélection si on recharge
+  select.innerHTML =
+    '<option value="">Tous paquets</option>' +
+    Array.from(pkgSet).sort().map((p) => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+  select.value = current;
 }
 
 // ---------------------------------------------------------------
@@ -878,8 +881,8 @@ function exportMarkdown() {
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => { currentTab = t.dataset.tab; renderTab(); }));
 document.getElementById('search').addEventListener('input', filterRows);
 document.getElementById('sevFilter').addEventListener('change', filterRows);
+document.getElementById('paqFilter').addEventListener('change', filterRows);
 document.getElementById('reloadBtn').addEventListener('click', loadData);
-document.getElementById('exportBtn').addEventListener('click', exportMarkdown);
 document.getElementById('vulnModal').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
 });
