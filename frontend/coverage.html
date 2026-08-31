@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+<script>
+  document.documentElement.setAttribute('data-theme', localStorage.getItem('dashboardTheme') || 'dark');
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Couverture — Agents inactifs</title>
@@ -23,6 +26,7 @@
   </div>
 
   <div class="nav-side nav-right">
+    <button class="theme-toggle" id="themeToggle" aria-label="Changer de thème">☀️</button>
     <button class="logout">Log Out</button>
   </div>
 </nav>

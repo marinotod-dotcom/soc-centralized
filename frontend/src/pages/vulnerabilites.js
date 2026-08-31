@@ -7,7 +7,6 @@ import { escapeHtml } from '../shared/dom.js';
 const SEVERITY_COLOR = { Critical: 'var(--critical)', High: 'var(--high)', Medium: 'var(--medium)', Low: 'var(--low)' };
 const SEVERITY_WEIGHT = { Critical: 4, High: 3, Medium: 2, Low: 1 };
 const STATUS_LABELS = { nouveau: 'Nouveau', valide: 'Validé', rejete: 'Rejeté', traite: 'Traité' };
-const STATUS_KEY = 'vulnStatuses';
 
 let allCves = [];
 let allAgents = [];
@@ -16,14 +15,23 @@ let cveSort = { key: 'cvss', dir: -1 };
 let agentSort = { key: 'cve_count', dir: -1 };
 let meta = {};
 let carouselResizeHandler = null; // pour pouvoir retirer l'ancien listener au reload
+let carouselAutoPlayInterval = null;
+
+// --- Utilisateur connecté & statuts de suivi (remplace l'ancien localStorage) ---
+let currentUser = null; // { username, role, ... } — voir GET /api/me
+let vulnStatusMap = new Map(); // clé `${cve_id}|${agent_name}` -> ligne renvoyée par GET /api/vulnerabilities
 
 async function loadData() {
   document.getElementById('subtitle').textContent = 'Chargement de data.json…';
   try {
-    const res = await fetch('/data/action_plan/latest.json', {
-      cache: 'no-store',
-      credentials: 'include',
-    });
+    const [res] = await Promise.all([
+      fetch('/data/action_plan/latest.json', {
+        cache: 'no-store',
+        credentials: 'include',
+      }),
+      fetchCurrentUser(),
+      fetchVulnStatuses(),
+    ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     const buckets = json?.aggregations?.vulnerabilities_by_agent?.buckets;
@@ -46,6 +54,89 @@ async function loadData() {
     document.getElementById('content').style.display = 'none';
     document.getElementById('subtitle').textContent = 'data.json introuvable ou invalide';
   }
+}
+
+// ---------------------------------------------------------------
+// Auth / statuts de suivi (API)
+// ---------------------------------------------------------------
+async function fetchCurrentUser() {
+  try {
+    const res = await fetch('/api/me', { credentials: 'include' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    currentUser = await res.json();
+  } catch (err) {
+    console.error("Impossible de récupérer l'utilisateur connecté", err);
+    currentUser = null;
+  }
+}
+
+async function fetchVulnStatuses() {
+  try {
+    const res = await fetch('/api/vulnerabilities', { credentials: 'include' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const rows = await res.json();
+    vulnStatusMap = new Map(rows.map((r) => [`${r.cve_id}|${r.agent_name}`, r]));
+  } catch (err) {
+    console.error('Impossible de récupérer les statuts de suivi', err);
+    vulnStatusMap = new Map();
+  }
+}
+
+async function treatVulnerabilityApi(cveId, agentName, comment) {
+  const res = await fetch(
+    `/api/vulnerabilities/${encodeURIComponent(cveId)}/${encodeURIComponent(agentName)}/treat`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment }),
+    }
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);
+  return res.json();
+}
+
+async function validateVulnerabilityApi(cveId, agentName) {
+  const url =
+    `/api/vulnerabilities/` +
+    `${encodeURIComponent(cveId)}/` +
+    `${encodeURIComponent(agentName)}/validate`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!res.ok) {
+    let detail = '';
+
+    try {
+      const data = await res.json();
+      detail = data.detail || '';
+    } catch {
+      detail = await res.text().catch(() => '');
+    }
+
+    const error = new Error(
+      `HTTP ${res.status}${detail ? ` : ${detail}` : ''}`
+    );
+
+    error.status = res.status;
+
+    throw error;
+  }
+
+  return res.json();
+}
+
+// L'utilisateur "technicien" peut marquer traité, "admin_cyber" peut valider.
+// Cela reflète les require_role(...) côté API — un onglet désactivé côté
+// front n'est qu'un confort UX, la vraie protection reste côté serveur.
+function canTreat() {
+  return currentUser?.role === 'technicien';
+}
+function canValidate() {
+  return currentUser?.role === 'admin_cyber';
 }
 
 // ---------------------------------------------------------------
@@ -135,6 +226,7 @@ function renderPeriod() {
     document.getElementById('period').textContent = `${meta.date_from.slice(0, 10)} → ${meta.date_to.slice(0, 10)}`;
   }
 }
+
 
 function renderStats() {
   const sevCounts = { Critical: 0, High: 0, Medium: 0, Low: 0 };
@@ -232,21 +324,28 @@ function initRemediationCarousel() {
   const track = document.getElementById('remediationTrack');
   let prev = document.getElementById('remediationPrev');
   let next = document.getElementById('remediationNext');
+
   if (!track || !prev || !next) return;
 
-  // On repart de boutons "propres" à chaque appel (clone sans listeners),
-  // sinon un clic sur "Recharger" empile un nouveau handler à chaque fois
-  // et le carrousel finit par avancer de plusieurs cases par clic.
+  // Nettoyage des anciens listeners
   const prevClone = prev.cloneNode(true);
   const nextClone = next.cloneNode(true);
+
   prev.replaceWith(prevClone);
   next.replaceWith(nextClone);
+
   prev = prevClone;
   next = nextClone;
 
   if (carouselResizeHandler) {
     window.removeEventListener('resize', carouselResizeHandler);
     carouselResizeHandler = null;
+  }
+
+  // Nettoyage d'un éventuel ancien interval
+  if (carouselAutoPlayInterval) {
+    clearInterval(carouselAutoPlayInterval);
+    carouselAutoPlayInterval = null;
   }
 
   const cards = track.querySelectorAll('.remediation-card');
@@ -256,6 +355,7 @@ function initRemediationCarousel() {
     next.style.display = 'none';
     return;
   }
+
   prev.style.display = '';
   next.style.display = '';
 
@@ -270,36 +370,74 @@ function initRemediationCarousel() {
   function updateCarousel() {
     const cardsPerView = getCardsPerView();
     const maxIndex = Math.max(0, cards.length - cardsPerView);
+
     currentIndex = Math.min(currentIndex, maxIndex);
 
     const cardWidth = cards[0].getBoundingClientRect().width;
     const gap = 16;
-    track.style.transform = `translateX(-${currentIndex * (cardWidth + gap)}px)`;
+
+    track.style.transform =
+      `translateX(-${currentIndex * (cardWidth + gap)}px)`;
 
     prev.disabled = currentIndex === 0;
     next.disabled = currentIndex >= maxIndex;
   }
 
+  // Bouton précédent
   prev.addEventListener('click', () => {
+    const cardsPerView = getCardsPerView();
+    const maxIndex = Math.max(0, cards.length - cardsPerView);
+
     if (currentIndex > 0) {
       currentIndex--;
-      updateCarousel();
+    } else {
+      // Si on est au début, on revient à la fin
+      currentIndex = maxIndex;
     }
+
+    updateCarousel();
   });
 
+  // Bouton suivant
   next.addEventListener('click', () => {
     const cardsPerView = getCardsPerView();
     const maxIndex = Math.max(0, cards.length - cardsPerView);
+
     if (currentIndex < maxIndex) {
       currentIndex++;
-      updateCarousel();
+    } else {
+      // Si on est à la fin, on revient au début
+      currentIndex = 0;
     }
+
+    updateCarousel();
   });
 
   carouselResizeHandler = updateCarousel;
   window.addEventListener('resize', carouselResizeHandler);
 
   updateCarousel();
+
+  // ============================
+  // DÉFILEMENT AUTOMATIQUE
+  // ============================
+
+  const AUTO_PLAY_DELAY = 3000; // 4 secondes
+
+  carouselAutoPlayInterval = setInterval(() => {
+    const cardsPerView = getCardsPerView();
+    const maxIndex = Math.max(0, cards.length - cardsPerView);
+
+    if (maxIndex === 0) return;
+
+    if (currentIndex < maxIndex) {
+      currentIndex++;
+    } else {
+      currentIndex = 0;
+    }
+
+    updateCarousel();
+  }, AUTO_PLAY_DELAY);
 }
 
 function renderTab() {
@@ -363,20 +501,18 @@ function renderCveTable() {
   });
 }
 
-function loadStatuses() {
-  try { return JSON.parse(localStorage.getItem(STATUS_KEY)) || {}; }
-  catch { return {}; }
-}
-function saveStatuses(statuses) {
-  localStorage.setItem(STATUS_KEY, JSON.stringify(statuses));
-}
-function getStatus(cve, agentId) {
-  return loadStatuses()[`${cve}|${agentId}`] || 'nouveau';
-}
-function setStatus(cve, agentId, status) {
-  const statuses = loadStatuses();
-  statuses[`${cve}|${agentId}`] = status;
-  saveStatuses(statuses);
+// Statut courant d'un couple (cve, agentName), depuis les données API
+// (GET /api/vulnerabilities), remplace l'ancien localStorage.
+function getStatus(cve, agentName) {
+  const row = vulnStatusMap.get(`${cve}|${agentName}`);
+
+  if (!row || !row.status) {
+    return 'nouveau';
+  }
+
+  const status = row.status.toLowerCase();
+
+  return STATUS_LABELS[status] ? status : 'nouveau';
 }
 
 function openCveModal(cveId) {
@@ -390,10 +526,14 @@ function openCveModal(cveId) {
 }
 
 function renderCveModalBody(c) {
+  const allowTreat = canTreat();
+  const allowValidate = canValidate();
+
   document.getElementById('modalBody').innerHTML = c.agents
     .map((a) => {
-      const status = getStatus(c.cve, a.id);
-      const comments = getComments(c.cve, a.id);
+      const status = getStatus(c.cve, a.name);
+      const trackingRow = vulnStatusMap.get(`${c.cve}|${a.name}`);
+      const comments = getComments(c.cve, a.name);
       const searchText = `${a.name} ${a.id}`.toLowerCase();
 
       const commentsHtml = comments.length
@@ -407,6 +547,14 @@ function renderCveModalBody(c) {
           </div>`
         : '';
 
+      // Petit résumé de qui a traité / validé, tel que renvoyé par l'API
+      const trackingHtml = trackingRow
+        ? `<div class="modal-row-tracking">
+            ${trackingRow.treated_by ? `<span>Traité par ${escapeHtml(trackingRow.treated_by)}</span>` : ''}
+            ${trackingRow.validated_by ? `<span>Validé par ${escapeHtml(trackingRow.validated_by)}</span>` : ''}
+          </div>`
+        : '';
+
       return `
       <div class="modal-row-detailed" data-status="${status}" data-search="${escapeHtml(searchText)}">
         <div class="modal-row-top">
@@ -415,26 +563,35 @@ function renderCveModalBody(c) {
           <span class="status-badge status-${status}">${STATUS_LABELS[status]}</span>
         </div>
 
+        ${trackingHtml}
         ${commentsHtml}
 
         <div class="modal-row-actions">
-          <button class="btn-ghost" data-toggle-form="traite">Marquer traité</button>
-          <button class="btn-primary" data-toggle-form="valide">Valider</button>
+          <button
+            class="btn-ghost"
+            data-toggle-form="traite"
+            ${allowTreat ? '' : 'disabled title="Réservé au rôle technicien"'}
+          >Marquer traité</button>
+          <button
+            class="btn-primary"
+            data-toggle-form="valide"
+            ${allowValidate ? '' : 'disabled title="Réservé au rôle admin_cyber"'}
+          >Valider</button>
         </div>
 
         <div class="modal-row-comment-form" data-form="traite" hidden>
           <textarea placeholder="Commentaire de traitement (obligatoire)..."></textarea>
           <div class="form-actions">
             <button class="btn-ghost" data-cancel-form>Annuler</button>
-            <button class="btn-primary" data-submit-form="traite" data-cve="${escapeHtml(c.cve)}" data-agent="${escapeHtml(a.id)}">Enregistrer</button>
+            <button class="btn-primary" data-submit-form="traite" data-cve="${escapeHtml(c.cve)}" data-agent="${escapeHtml(a.name)}">Enregistrer</button>
           </div>
         </div>
 
         <div class="modal-row-comment-form" data-form="valide" hidden>
-          <textarea placeholder="Réponse de validation (optionnel)..."></textarea>
+          <textarea placeholder="Réponse de validation (optionnel, non transmise à l'API)..."></textarea>
           <div class="form-actions">
             <button class="btn-ghost" data-cancel-form>Annuler</button>
-            <button class="btn-primary" data-submit-form="valide" data-cve="${escapeHtml(c.cve)}" data-agent="${escapeHtml(a.id)}">Valider</button>
+            <button class="btn-primary" data-submit-form="valide" data-cve="${escapeHtml(c.cve)}" data-agent="${escapeHtml(a.name)}">Valider</button>
           </div>
         </div>
       </div>`;
@@ -450,6 +607,7 @@ function wireCveModalRowEvents(c) {
 
   // Ouvre/ferme le formulaire au clic sur "Marquer traité" / "Valider"
   body.querySelectorAll('button[data-toggle-form]').forEach((btn) => {
+    if (btn.disabled) return; // pas de rôle -> pas de formulaire
     btn.addEventListener('click', () => {
       const row = btn.closest('.modal-row-detailed');
       const formType = btn.dataset.toggleForm;
@@ -469,8 +627,13 @@ function wireCveModalRowEvents(c) {
   });
 
   body.querySelectorAll('[data-submit-form]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const { submitForm: action, cve, agent } = btn.dataset;
+
+      // Garde-fou côté client — la vraie protection reste le require_role() de l'API
+      if (action === 'traite' && !canTreat()) return;
+      if (action === 'valide' && !canValidate()) return;
+
       const form = btn.closest('.modal-row-comment-form');
       const textarea = form.querySelector('textarea');
       const text = textarea.value.trim();
@@ -481,14 +644,132 @@ function wireCveModalRowEvents(c) {
         return; // commentaire obligatoire pour "Marquer traité"
       }
 
-      addComment(cve, agent, {
-        type: action === 'traite' ? 'traitement' : 'validation',
-        text: text || '(sans commentaire)',
-      });
-      setStatus(cve, agent, action);
-      renderCveModalBody(c); // re-render complet : nouveau badge + commentaire affiché
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = 'Envoi…';
+
+      try {
+        if (action === 'traite') {
+          await treatVulnerabilityApi(cve, agent, text);
+
+          addComment(cve, agent, {
+            type: 'traitement',
+            text: text || '(sans commentaire)',
+          });
+
+          // API OK → récupérer le statut depuis la BDD
+          await fetchVulnStatuses();
+          renderCveModalBody(c);
+
+        } else {
+          try {
+            await validateVulnerabilityApi(cve, agent);
+
+            // API /validate OK
+            if (text) {
+              addComment(cve, agent, {
+                type: 'validation',
+                text,
+              });
+            }
+
+            // Récupérer le nouveau statut depuis la BDD
+            await fetchVulnStatuses();
+            renderCveModalBody(c);
+
+          } catch (err) {
+            console.error('Validation refusée :', err);
+
+            // L'API /validate a échoué :
+            // Wazuh détecte encore la vulnérabilité.
+            const key = `${cve}|${agent}`;
+
+            const existingRow = vulnStatusMap.get(key);
+
+            if (existingRow) {
+              existingRow.status = 'rejete';
+            } else {
+              vulnStatusMap.set(key, {
+                cve_id: cve,
+                agent_name: agent,
+                status: 'rejete',
+                treated_by: null,
+                treated_at: null,
+                validated_by: null,
+                validated_at: null,
+              });
+            }
+
+            // Afficher immédiatement "Rejeté"
+            renderCveModalBody(c);
+
+            // Notification
+            showNotification(
+              'Wazuh détecte encore cette vulnérabilité',
+              'error'
+            );
+          }
+        }
+
+      } catch (err) {
+        console.error('Échec de l’action :', err);
+
+        showNotification(
+          `Échec de l'action : ${err.message}`,
+          'error'
+        );
+
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
     });
   });
+}
+
+function showNotification(message, type = 'error') {
+  let notification = document.getElementById('appNotification');
+
+  if (!notification) {
+    notification = document.createElement('div');
+    notification.id = 'appNotification';
+
+    Object.assign(notification.style, {
+      position: 'fixed',
+      top: '24px',
+      right: '24px',
+      zIndex: '99999',
+      padding: '14px 20px',
+      borderRadius: '8px',
+      fontSize: '14px',
+      fontWeight: '600',
+      maxWidth: '400px',
+      boxShadow: '0 8px 25px rgba(0, 0, 0, 0.2)',
+      transition: 'opacity 0.3s ease',
+    });
+
+    document.body.appendChild(notification);
+  }
+
+  notification.textContent = message;
+
+  notification.style.background =
+    type === 'error'
+      ? '#fee2e2'
+      : '#dcfce7';
+
+  notification.style.color =
+    type === 'error'
+      ? '#991b1b'
+      : '#166534';
+
+  notification.style.opacity = '1';
+
+  clearTimeout(notification._timeout);
+
+  notification._timeout = setTimeout(() => {
+    notification.style.opacity = '0';
+  }, 4000);
 }
 
 function filterModalRows() {
