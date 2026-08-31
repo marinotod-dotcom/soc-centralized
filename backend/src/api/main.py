@@ -65,11 +65,12 @@ def treat_vulnerability(
 def validate_vulnerability(
     cve_id: str,
     agent_name: str,
+    comment: str | None = Body(None, embed=True),
     identity: dict = Depends(require_role("admin_cyber")),
 ):
     try:
         new_status = tracking_service.validate(
-            cve_id=cve_id, agent_name=agent_name, admin=identity["username"]
+            cve_id=cve_id, agent_name=agent_name, admin=identity["username"], comment=comment
         )
     except ValueError as e:
         raise HTTPException(404, str(e))

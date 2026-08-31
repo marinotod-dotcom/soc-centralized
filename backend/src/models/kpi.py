@@ -5,7 +5,6 @@ from .enums.kpi_unit_enum import KPIUnit
 from .enums.kpi_category_enum import KPICategory
 from .enums.kpi_severity_enum import KPISeverity
 
-
 class KPI(BaseModel):
 
     request_id: str

@@ -3,7 +3,6 @@ from .enums.kpi_unit_enum import KPIUnit
 from .enums.kpi_category_enum import KPICategory
 from .enums.kpi_severity_enum import KPISeverity
 
-
 class KPIFactory:
 
     def __init__(self, category: KPICategory, unit: KPIUnit = KPIUnit.COUNT):

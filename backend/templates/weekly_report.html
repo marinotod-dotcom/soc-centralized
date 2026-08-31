@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <title>KPI Wazuh - {{ metadata.get_week_label }}</title>
+    <link rel="stylesheet" href="../static/css/report.css">
+</head>
+
+<body>
+
+    <!-- ================================================================
+     PAGE DE GARDE
+     ================================================================ -->
+    <div class="cover-page">
+
+        <!-- Bande logo en haut -->
+        <div class="cover-topbar">
+            <div class="cover-topbar__left" id="logo-group">
+                <!-- Icône SVG "snowflake / asterisk" stylisé SmartOne -->
+                <img class="logo-smart" src="../assets/smartone_group_logo.jpg" alt="smartone.ai">
+                <span class="logo-text">SmartOne.ai</span>
+            </div>
+            <div class="cover-topbar__right">
+                smartone.ai<br>
+                Confidentiel
+            </div>
+        </div>
+
+        <!-- Référence du document -->
+        <div class="cover-docref">
+            AUC-MG-RAP-00-KPI_Wazuh - hebdo {{ metadata.get_week_label }}-FR
+        </div>
+        <div class="cover-docref-bar"></div>
+
+        <!-- Titre encadré -->
+        <div class="cover-title-zone">
+            <div class="cover-title-box">
+                <h1>KPI Wazuh &ndash; {{ metadata.get_week_label }}</h1>
+            </div>
+            <div class="cover-confidential">Confidentiel</div>
+        </div>
+
+        <!-- Corps de la page de garde -->
+        <div class="cover-body">
+
+            <!-- Liste de distribution -->
+            <div class="cover-section-label">Liste de distribution</div>
+            <table class="cover-table">
+                <thead>
+                    <tr>
+                        <th style="width:35%">Nom</th>
+                        <th style="width:30%">Rôle</th>
+                        <th style="width:35%">Email</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td></td>
+                        <td>Equipe DSI</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td>RSSI</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td>Audit &amp; Compliance</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td>DEV/DATA</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td>Direction</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <!-- Site -->
+            <div class="cover-resume" style="margin-top:14px;">
+                <strong>Site</strong> : SmartOne Madagascar, site Digue
+            </div>
+
+            <!-- Résumé -->
+            <div class="cover-resume" style="margin-top:14px;">
+                <strong>Résumé :</strong><br>
+                Ce document présent le KPI Wazuh {{ metadata.get_week_label }}
+            </div>
+
+            <!-- Informations générales -->
+            <div class="cover-resume" style="margin-top:14px;">
+                <strong>Informations générales</strong> :
+            </div>
+            <table class="cover-table" style="margin-top:6px;">
+                <thead>
+                    <tr>
+                        <th style="width:45%">Élément</th>
+                        <th>Valeur</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Période analysée</strong></td>
+                        <td style="text-align:center">Du {{ metadata.date_from }} au {{ metadata.date_to }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Outil de supervision / d'analyse</strong></td>
+                        <td style="text-align:center">Wazuh 4.14.4</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Référentiels utilisés</strong></td>
+                        <td style="text-align:center">ISO 27001, CIS Benchmark, RGPD, HIPAA</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Périmètre</strong></td>
+                        <td style="text-align:center">Postes de travail et serveurs supervisés par Wazuh</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Nombre total d'agents supervisés</strong></td>
+                        <td style="text-align:center">{{ metadata.agent_count | default("—") }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Type d'analyse</strong></td>
+                        <td>
+                            &bull; Logs<br>
+                            &bull; Malware<br>
+                            &bull; FIM<br>
+                            &bull; CIS Benchmark<br>
+                            &bull; Vulnerability Detection<br>
+                            &bull; Conformité réglementaire
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+        </div><!-- /cover-body -->
+
+        <!-- Pied de page de garde -->
+        <div class="content-footer">
+            Ce document est la propriété de SmartOne.ai à usage confidentiel uniquement.
+        </div>
+
+    </div><!-- /cover-page -->
+
+
+    <!-- ================================================================
+     PAGE 2+ — CONTENU DU RAPPORT
+     ================================================================ -->
+    <div class="page-break">
+
+        <!-- En-tête de page contenu -->
+        <div class="content-header">
+            <div class="content-header__left">
+                <span class="content-header__logo-text">SmartOne.ai</span>
+            </div>
+            <div class="content-header__right">
+                KPI Wazuh {{ metadata.get_week_label }} &nbsp;·&nbsp; Confidentiel &nbsp;·&nbsp; {{
+                metadata.generated_at }}
+            </div>
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- LOGS -->
+        <!-- ================================================================ -->
+
+        <div class="title_logs">1 - Logs & Supervision</div>
+
+        <div class="section-heading">Indicateurs clés</div>
+
+        <table class="kpi-grid">
+            <tr class="kpi-row">
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Agents déclarés</div>
+                    <div class="kpi-card__value">
+                        {{ "{:,}".format(kpis.logs.agent_summary.data.total_declared) }}
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Jamais connectés</div>
+                    <div class="kpi-card__value">
+                        {{ "{:,}".format(kpis.logs.never_connected_agents.data.never_connected) }}
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Alertes critiques non traitées</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.logs.confirmed_incidents.data.count_total }}
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Incidents confirmés</div>
+                    <div class="kpi-card__value">
+                        {{ "{:,}".format(kpis.logs.confirmed_incidents.data.count) }}
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <div class="section-heading">État du parc supervisé</div>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Indicateur</th>
+                    <th>Valeur</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Agents déclarés</td>
+                    <td>{{ kpis.logs.agent_summary.data.total_declared }}</td>
+                </tr>
+                <tr>
+                    <td>Taux de couverture d'agents</td>
+                    <td>{{ kpis.logs.agent_summary.data.coverage_rate_pct }} %</td>
+                </tr>
+                <tr>
+                    <td>Taux de couverture des logs</td>
+                    <td>{{ kpis.logs.never_connected_agents.data.coverage_logs_percentage }} %</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- ================================================================ -->
+        <!-- MALWARE -->
+        <!-- ================================================================ -->
+
+        <div class="title_cis">2 - Malware Dectection</div>
+
+        <div class="section-heading">Indicateurs clés</div>
+
+        <table class="kpi-grid">
+            <tr class="kpi-row">
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Nombres total d'evenements</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.malware.get_raw_event_count.data.value }} 
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Criticité plus de level 10</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.malware.get_real_threat_count.data.value }}
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Agents concernés</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.malware.get_unique_agents.data.value }}
+                    </div>
+                </td>
+
+            </tr>
+        </table>
+
+        <div class="cis_score">Top agents les plus infectés</div>
+        <table>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Nom d'agent</th>
+                        <th>Nombres d'evenements</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for event in kpis.malware.get_top10_agents.data.agents %}
+                    <tr>
+                        <td>{{ event.agent_name }}</td>
+                        <td>{{ event.event_count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+        </table>
+        <div class="page-break"></div>
+
+        <div class="cis_score">Top Malwares</div>
+        <table>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Nom du malware</th>
+                        <th>Nombres d'evenements</th>
+                        <th>Pourcentage</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for threat in kpis.malware.get_top10_threats.data.threats %}
+                    <tr>
+                        <td>{{ threat.threat_name }}</td>
+                        <td>{{ threat.count }}</td>
+                        <td>{{ threat.percentage }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+        </table>
+
+        <!-- ================================================================ -->
+        <!-- FIM -->
+        <!-- ================================================================ -->
+
+        <div class="title_cis">3 - FIM(File Intergrity Monitoring)</div>
+        
+        <div class="section-heading">Indicateurs clés</div>
+        
+        <table class="kpi-grid">
+            <tr class="kpi-row">
+        
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Total evenements FIM</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.fim.total_fim_events.data.value }}
+                    </div>
+                </td>
+        
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Evenements critiques</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.fim.alert_level_breakdown.data.critical }}
+                    </div>
+                </td>
+        
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Evenements elevés</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.fim.alert_level_breakdown.data.high }}
+                    </div>
+                </td>
+        
+            </tr>
+        </table>
+        
+        <div class="cis_score">Analyse des modifications de fichiers</div>
+        
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Indicateur</th>
+                    <th>Valeur</th>
+                </tr>
+            </thead>
+        
+            <tbody>
+                <tr>
+                    <td>Total des fichiers modifiés</td>
+                    <td>{{ kpis.fim.event_type_breakdown.data.modified_total }}</td>
+                </tr>
+                <tr>
+                    <td>Modifications avec changement de hash</td>
+                    <td>{{ kpis.fim.event_type_breakdown.data.modified_hash}}</td>
+                </tr>
+                <tr>
+                    <td>Modification de date uniquement (mtime)</td>
+                    <td>{{ kpis.fim.event_type_breakdown.data.modified_mtime }}</td>
+                </tr>
+                <tr>
+                    <td>Pourcentage mtime uniquement</td>
+                    <td>{{ "%.2f"|format(kpis.fim.mode_coverage.data.realtime_pct) }} %</td>
+                </tr>
+            </tbody>
+        </table>
+        
+        <div class="cis_score">Suppressions de fichiers détectées</div>
+        
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Indicateur</th>
+                    <th>Valeur</th>
+                </tr>
+            </thead>
+        
+            <tbody>
+                <tr>
+                    <td>Nombre de suppressions</td>
+                    <td>{{ kpis.fim.event_type_breakdown.data.deleted }}</td>
+                </tr>
+            </tbody>
+        </table>
+        
+        <div class="cis_score">Répartition des modes de surveillance FIM</div>
+        
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Mode</th>
+                    <th>Nombre</th>
+                    <th>Pourcentage</th>
+                </tr>
+            </thead>
+        
+            <tbody>
+                <tr>
+                    <td>Realtime</td>
+                    <td>{{ kpis.fim.mode_coverage.data.realtime }}</td>
+                    <td>{{ "%.2f"|format(kpis.fim.mode_coverage.data.realtime_pct) }} %</td>
+                </tr>
+        
+                <tr>
+                    <td>Scheduled</td>
+                    <td>{{ kpis.fim.mode_coverage.data.scheduled }}</td>
+                    <td>{{ "%.2f"|format(kpis.fim.mode_coverage.data.scheduled_pct) }} %</td>
+                </tr>
+        
+                <tr>
+                    <td>Whodata</td>
+                    <td>{{ kpis.fim.mode_coverage.data.whodata }}</td>
+                    <td>{{ "%.2f"|format(kpis.fim.mode_coverage.data.whodata_pct) }} %</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- ================================================================ -->
+        <!-- CIS BENCHMARK -->
+        <!-- ================================================================ -->
+
+        <div class="page-break"></div>
+        <div class="title_cis">3 - Conformité CIS Benchmark</div>
+
+        <div class="section-heading">Indicateurs clés</div>
+
+        <table class="kpi-grid">
+            <tr class="kpi-row">
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Agents analysés</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.cis.scanned_agent.data.policie }} 
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Score moyen</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.cis.score_global.data.score_moyen }} %
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Score minimum</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.cis.score_global.data.score_min }} %
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Score maximum</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.cis.score_global.data.score_max }} %
+                    </div>
+                </td>
+
+            </tr>
+        </table>
+
+        <div class="cis_score">Score par policy</div>
+        <table>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Policy</th>
+                        <th>Score moyen (%)</th>
+                        <th>Nombre de contrôles collectés</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for policy in kpis.cis.score_by_policy.data.policies %}
+                    <tr>
+                        <td>{{ policy.policy }}</td>
+                        <td>{{ policy.score_moyen }}</td>
+                        <td>{{ policy.count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+        </table>
+
+        <!-- ── Vulnerabilités ───────────────────────────────── -->
+        <div class="title_vuln">4 - Vulnérabilités</div>
+        <!-- ── Indicateurs clés ───────────────────────────────── -->
+        <div class="section-heading">Indicateurs clés</div>
+
+        <table class="kpi-grid">
+            <tr class="kpi-row">
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Total vulnérabilités</div>
+                    <div class="kpi-card__value">
+                    {{ kpis.vulnerabilities.raw_event_count.data.value }}
+                    </div>
+                </td>
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Vulnérabilités actives</div>
+                    <div class="kpi-card__value">
+                    {{ kpis.vulnerabilities.active_vulns.data.active_vuln_count }}
+                    </div>
+                </td>
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Machines affectées</div>
+                    <div class="kpi-card__value">
+                    {{ kpis.vulnerabilities.active_vulns.data.machines_count }}
+                    </div>
+                </td>
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Différentes CVE</div>
+                    <div class="kpi-card__value">
+                    {{ kpis.vulnerabilities.unique_cve_count.data.unique_cve }}
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <!-- ── Répartition par sévérité ──────────────────────── -->
+        <div class="section-heading">Répartition par sévérité</div>
+
+        <div class="no-break">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Sévérité</th>
+                        <th>Nombre</th>
+                        <th>Pourcentage</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in kpis.vulnerabilities.severity_breakdown.data.breakdown %}
+                    <tr>
+                        <td>
+                            <span>{{ item.severity }}</span>
+                        </td>
+                        <td>{{ item.count}}</td>
+                        <td>{{ item.percentage }} %</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ── Top 10 machines ───────────────────────────────── -->
+        <div class="section-heading">Top 10 machines les plus vulnérables</div>
+
+        <div class="no-break">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:36px;">#</th>
+                        <th>Machine</th>
+                        <th>Vulnérabilités</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for machine in kpis.vulnerabilities.top10_vulnerable_machines.data.machines %}
+                    <tr>
+                        <td class="rank">{{ loop.index }}</td>
+                        <td>{{ machine.agent_name }}</td>
+                        <td>{{machine.vuln_count |thousands }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ── Top 10 CVE ────────────────────────────────────── -->
+        <div class="section-heading">Top 10 CVE détectées</div>
+
+        <div class="no-break">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:36px;">#</th>
+                        <th>CVE</th>
+                        <th>Occurrences</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cve in kpis.vulnerabilities.top10_cve.data["values"] %}
+                    <tr>
+                        <td class="rank">{{ loop.index }}</td>
+                        <td><span class="cve-id">{{ cve.cve }}</span></td>
+                        <td>{{ cve.count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+	<!-- ================================================================ -->
+        <!-- COMPLIANCE -->
+        <!-- ================================================================ -->
+
+        <div class="page-break"></div>
+        <div class="title_cis">4 - Conformité HIPAA &amp; RGPD</div>
+
+        <div class="section-heading">HIPAA</div>
+
+        <table class="kpi-grid">
+            <tr class="kpi-row">
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Total évènements</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.compliance.get_hipaa.data.total }}
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Critique</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.compliance.get_hipaa.data.critique }}
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Élevé</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.compliance.get_hipaa.data.eleve }}
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Moyen</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.compliance.get_hipaa.data.moyen }}
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Faible</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.compliance.get_hipaa.data.faible }}
+                    </div>
+                </td>
+
+            </tr>
+        </table>
+
+        <div class="section-heading">RGPD</div>
+
+        <table class="kpi-grid">
+            <tr class="kpi-row">
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Total évènements</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.compliance.get_rgpd.data.total }}
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Critique</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.compliance.get_rgpd.data.critique }}
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Élevé</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.compliance.get_rgpd.data.eleve }}
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Moyen</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.compliance.get_rgpd.data.moyen }}
+                    </div>
+                </td>
+
+                <td class="kpi-card">
+                    <div class="kpi-card__label">Faible</div>
+                    <div class="kpi-card__value">
+                        {{ kpis.compliance.get_rgpd.data.faible }}
+                    </div>
+                </td>
+
+            </tr>
+        </table>
+
+        <div class="cis_score">Synthèse comparative</div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Norme</th>
+                    <th>Total</th>
+                    <th>Critique</th>
+                    <th>Élevé</th>
+                    <th>Moyen</th>
+                    <th>Faible</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>HIPAA</td>
+                    <td>{{ kpis.compliance.get_hipaa.data.total }}</td>
+                    <td>{{ kpis.compliance.get_hipaa.data.critique }}</td>
+                    <td>{{ kpis.compliance.get_hipaa.data.eleve }}</td>
+                    <td>{{ kpis.compliance.get_hipaa.data.moyen }}</td>
+                    <td>{{ kpis.compliance.get_hipaa.data.faible }}</td>
+                </tr>
+                <tr>
+                    <td>RGPD</td>
+                    <td>{{ kpis.compliance.get_rgpd.data.total }}</td>
+                    <td>{{ kpis.compliance.get_rgpd.data.critique }}</td>
+                    <td>{{ kpis.compliance.get_rgpd.data.eleve }}</td>
+                    <td>{{ kpis.compliance.get_rgpd.data.moyen }}</td>
+                    <td>{{ kpis.compliance.get_rgpd.data.faible }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Pied de page contenu -->
+        <div class="content-footer">
+            Ce document est la propriété de SmartOne.ai à usage confidentiel uniquement.
+        </div>
+
+    </div><!-- /content -->
+
+</body>
+
+</html>

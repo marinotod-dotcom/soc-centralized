@@ -10,7 +10,6 @@ from src.collectors.fim import FimCollector
 from src.collectors.malware import MalwareCollector
 from src.collectors.compliance import ComplianceCollector
 
-
 class KPIService:
     def __init__(
         self,
