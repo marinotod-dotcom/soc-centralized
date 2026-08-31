@@ -1,5 +1,4 @@
 import '../shared/theme.css';
-import { getComments, addComment } from '../shared/vulnComments.js';
 import { initThemeToggle } from '../shared/theme-toggle.js';
 import { highlightActiveNav } from '../shared/nav.js';
 import { escapeHtml } from '../shared/dom.js';
@@ -97,7 +96,7 @@ async function treatVulnerabilityApi(cveId, agentName, comment) {
   return res.json();
 }
 
-async function validateVulnerabilityApi(cveId, agentName) {
+async function validateVulnerabilityApi(cveId, agentName, comment) {
   const url =
     `/api/vulnerabilities/` +
     `${encodeURIComponent(cveId)}/` +
@@ -106,6 +105,8 @@ async function validateVulnerabilityApi(cveId, agentName) {
   const res = await fetch(url, {
     method: 'POST',
     credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ comment: comment || null }),
   });
 
   if (!res.ok) {
@@ -138,6 +139,66 @@ function canTreat() {
 }
 function canValidate() {
   return currentUser?.role === 'admin_cyber';
+}
+
+// ---------------------------------------------------------------
+// Statut : normalisation centralisée
+// ---------------------------------------------------------------
+// Le backend renvoie l'enum de statut telle qu'elle est stockée (souvent en
+// MAJUSCULES, ex: "NOUVEAU", "VALIDE"), alors que STATUS_LABELS et le CSS
+// (.status-nouveau, .status-valide, ...) attendent des clés en minuscules.
+// Sans cette normalisation, STATUS_LABELS[status] renvoie undefined et
+// "undefined" s'affiche tel quel dans le badge. On centralise ici la
+// normalisation + le fallback pour ne plus jamais afficher une valeur
+// inconnue.
+function normalizeStatus(rawStatus) {
+  const s = (rawStatus || '').toString().toLowerCase();
+  return STATUS_LABELS[s] ? s : 'nouveau';
+}
+
+function getStatus(cve, agentName) {
+  const row = vulnStatusMap.get(`${cve}|${agentName}`);
+  return normalizeStatus(row?.status);
+}
+
+// ---------------------------------------------------------------
+// Notifications (remplace les alert())
+// ---------------------------------------------------------------
+function showNotification(message, type = 'error') {
+  let notification = document.getElementById('appNotification');
+
+  if (!notification) {
+    notification = document.createElement('div');
+    notification.id = 'appNotification';
+
+    Object.assign(notification.style, {
+      position: 'fixed',
+      top: '24px',
+      right: '24px',
+      zIndex: '99999',
+      padding: '14px 20px',
+      borderRadius: '8px',
+      fontSize: '14px',
+      fontWeight: '600',
+      maxWidth: '400px',
+      boxShadow: '0 8px 25px rgba(0, 0, 0, 0.2)',
+      transition: 'opacity 0.3s ease',
+    });
+
+    document.body.appendChild(notification);
+  }
+
+  notification.textContent = message;
+
+  notification.style.background = type === 'error' ? '#fee2e2' : '#dcfce7';
+  notification.style.color = type === 'error' ? '#991b1b' : '#166534';
+  notification.style.opacity = '1';
+
+  clearTimeout(notification._timeout);
+
+  notification._timeout = setTimeout(() => {
+    notification.style.opacity = '0';
+  }, 4000);
 }
 
 // ---------------------------------------------------------------
@@ -227,7 +288,6 @@ function renderPeriod() {
     document.getElementById('period').textContent = `${meta.date_from.slice(0, 10)} → ${meta.date_to.slice(0, 10)}`;
   }
 }
-
 
 function renderStats() {
   const sevCounts = { Critical: 0, High: 0, Medium: 0, Low: 0 };
@@ -423,7 +483,7 @@ function initRemediationCarousel() {
   // DÉFILEMENT AUTOMATIQUE
   // ============================
 
-  const AUTO_PLAY_DELAY = 3000; // 4 secondes
+  const AUTO_PLAY_DELAY = 3000;
 
   carouselAutoPlayInterval = setInterval(() => {
     const cardsPerView = getCardsPerView();
@@ -502,20 +562,6 @@ function renderCveTable() {
   });
 }
 
-// Statut courant d'un couple (cve, agentName), depuis les données API
-// (GET /api/vulnerabilities), remplace l'ancien localStorage.
-function getStatus(cve, agentName) {
-  const row = vulnStatusMap.get(`${cve}|${agentName}`);
-
-  if (!row || !row.status) {
-    return 'nouveau';
-  }
-
-  const status = row.status.toLowerCase();
-
-  return STATUS_LABELS[status] ? status : 'nouveau';
-}
-
 function openCveModal(cveId) {
   const c = allCves.find((x) => x.cve === cveId);
   if (!c) return;
@@ -526,35 +572,63 @@ function openCveModal(cveId) {
   document.getElementById('vulnModal').classList.add('open');
 }
 
+// ---------------------------------------------------------------
+// Commentaires : construit la liste "traitement"/"validation" à partir
+// d'une ligne de suivi renvoyée par GET /api/vulnerabilities.
+// NOTE: nécessite que l'API renvoie aussi treated_comment / validated_comment
+// (voir patch backend). Si ces champs ne sont pas encore exposés, on affiche
+// un texte de repli plutôt que de ne rien montrer.
+// ---------------------------------------------------------------
+function buildCommentItems(trackingRow) {
+  const items = [];
+  if (trackingRow?.treated_by) {
+    items.push({
+      type: 'traitement',
+      label: 'Traitement',
+      author: trackingRow.treated_by,
+      text: trackingRow.treated_comment,
+      date: trackingRow.treated_at,
+    });
+  }
+  if (trackingRow?.validated_by) {
+    items.push({
+      type: 'validation',
+      label: 'Validation',
+      author: trackingRow.validated_by,
+      text: trackingRow.validated_comment,
+      date: trackingRow.validated_at,
+    });
+  }
+  return items;
+}
+
+function renderComments(trackingRow) {
+  const items = buildCommentItems(trackingRow);
+  if (!items.length) return '';
+  return `
+    <div class="modal-row-comments">
+      ${items
+        .map(
+          (it) => `
+        <div class="comment-item comment-${it.type}">
+          <span class="comment-author">${escapeHtml(it.author)} — ${it.label}</span>
+          <span class="comment-text">${escapeHtml(it.text || '(pas de commentaire)')}</span>
+          ${it.date ? `<span class="comment-date">${new Date(it.date).toLocaleString('fr-FR')}</span>` : ''}
+        </div>`
+        )
+        .join('')}
+    </div>`;
+}
+
 function renderCveModalBody(c) {
   const allowTreat = canTreat();
   const allowValidate = canValidate();
 
   document.getElementById('modalBody').innerHTML = c.agents
     .map((a) => {
-      const status = getStatus(c.cve, a.name);
       const trackingRow = vulnStatusMap.get(`${c.cve}|${a.name}`);
-      const comments = getComments(c.cve, a.name);
-      const searchText = `${a.name} ${a.id}`.toLowerCase();
-
-      const commentsHtml = comments.length
-        ? `<div class="modal-row-comments">
-            ${comments.map((cm) => `
-              <div class="comment-item comment-${cm.type}">
-                <span class="comment-author">${escapeHtml(cm.author)}</span>
-                <span class="comment-text">${escapeHtml(cm.text)}</span>
-                <span class="comment-date">${new Date(cm.createdAt).toLocaleString('fr-FR')}</span>
-              </div>`).join('')}
-          </div>`
-        : '';
-
-      // Petit résumé de qui a traité / validé, tel que renvoyé par l'API
-      const trackingHtml = trackingRow
-        ? `<div class="modal-row-tracking">
-            ${trackingRow.treated_by ? `<span>Traité par ${escapeHtml(trackingRow.treated_by)}</span>` : ''}
-            ${trackingRow.validated_by ? `<span>Validé par ${escapeHtml(trackingRow.validated_by)}</span>` : ''}
-          </div>`
-        : '';
+      const status = normalizeStatus(trackingRow?.status);
+      const searchText = `${a.name}`.toLowerCase();
 
       return `
       <div class="modal-row-detailed" data-status="${status}" data-search="${escapeHtml(searchText)}">
@@ -564,8 +638,7 @@ function renderCveModalBody(c) {
           <span class="status-badge status-${status}">${STATUS_LABELS[status]}</span>
         </div>
 
-        ${trackingHtml}
-        ${commentsHtml}
+        ${renderComments(trackingRow)}
 
         <div class="modal-row-actions">
           <button
@@ -589,7 +662,7 @@ function renderCveModalBody(c) {
         </div>
 
         <div class="modal-row-comment-form" data-form="valide" hidden>
-          <textarea placeholder="Réponse de validation (optionnel, non transmise à l'API)..."></textarea>
+          <textarea placeholder="Réponse de validation (optionnel)..."></textarea>
           <div class="form-actions">
             <button class="btn-ghost" data-cancel-form>Annuler</button>
             <button class="btn-primary" data-submit-form="valide" data-cve="${escapeHtml(c.cve)}" data-agent="${escapeHtml(a.name)}">Valider</button>
@@ -644,6 +717,7 @@ function wireCveModalRowEvents(c) {
         textarea.focus();
         return; // commentaire obligatoire pour "Marquer traité"
       }
+      textarea.classList.remove('input-error');
 
       btn.disabled = true;
       const originalLabel = btn.textContent;
@@ -652,125 +726,19 @@ function wireCveModalRowEvents(c) {
       try {
         if (action === 'traite') {
           await treatVulnerabilityApi(cve, agent, text);
-
-          addComment(cve, agent, {
-            type: 'traitement',
-            text: text || '(sans commentaire)',
-          });
-
-          // API OK → récupérer le statut depuis la BDD
-          await fetchVulnStatuses();
-          renderCveModalBody(c);
-
         } else {
-          try {
-            await validateVulnerabilityApi(cve, agent);
-
-            // API /validate OK
-            if (text) {
-              addComment(cve, agent, {
-                type: 'validation',
-                text,
-              });
-            }
-
-            // Récupérer le nouveau statut depuis la BDD
-            await fetchVulnStatuses();
-            renderCveModalBody(c);
-
-          } catch (err) {
-            console.error('Validation refusée :', err);
-
-            // L'API /validate a échoué :
-            // Wazuh détecte encore la vulnérabilité.
-            const key = `${cve}|${agent}`;
-
-            const existingRow = vulnStatusMap.get(key);
-
-            if (existingRow) {
-              existingRow.status = 'rejete';
-            } else {
-              vulnStatusMap.set(key, {
-                cve_id: cve,
-                agent_name: agent,
-                status: 'rejete',
-                treated_by: null,
-                treated_at: null,
-                validated_by: null,
-                validated_at: null,
-              });
-            }
-
-            // Afficher immédiatement "Rejeté"
-            renderCveModalBody(c);
-
-            // Notification
-            showNotification(
-              'Wazuh détecte encore cette vulnérabilité',
-              'error'
-            );
-          }
+          await validateVulnerabilityApi(cve, agent, text || null);
         }
-
+        await fetchVulnStatuses();
+        renderCveModalBody(c);
+        showNotification('Statut mis à jour avec succès', 'success');
       } catch (err) {
-        console.error('Échec de l’action :', err);
-
-        showNotification(
-          `Échec de l'action : ${err.message}`,
-          'error'
-        );
-
-      } finally {
+        showNotification("Erreur lors de l'enregistrement : " + (err.message || err), 'error');
         btn.disabled = false;
         btn.textContent = originalLabel;
       }
     });
   });
-}
-
-function showNotification(message, type = 'error') {
-  let notification = document.getElementById('appNotification');
-
-  if (!notification) {
-    notification = document.createElement('div');
-    notification.id = 'appNotification';
-
-    Object.assign(notification.style, {
-      position: 'fixed',
-      top: '24px',
-      right: '24px',
-      zIndex: '99999',
-      padding: '14px 20px',
-      borderRadius: '8px',
-      fontSize: '14px',
-      fontWeight: '600',
-      maxWidth: '400px',
-      boxShadow: '0 8px 25px rgba(0, 0, 0, 0.2)',
-      transition: 'opacity 0.3s ease',
-    });
-
-    document.body.appendChild(notification);
-  }
-
-  notification.textContent = message;
-
-  notification.style.background =
-    type === 'error'
-      ? '#fee2e2'
-      : '#dcfce7';
-
-  notification.style.color =
-    type === 'error'
-      ? '#991b1b'
-      : '#166534';
-
-  notification.style.opacity = '1';
-
-  clearTimeout(notification._timeout);
-
-  notification._timeout = setTimeout(() => {
-    notification.style.opacity = '0';
-  }, 4000);
 }
 
 function filterModalRows() {
@@ -839,7 +807,14 @@ function openAgentModal(agentId) {
   if (!a) return;
   document.getElementById('modalTitle').textContent = `${a.name} — ${a.cves.length} CVE`;
   document.getElementById('modalBody').innerHTML = a.cves
-    .map((c) => `<div class="modal-row"><span class="h">${escapeHtml(c.cve)}</span><span class="c">${escapeHtml(c.severity)}</span></div>`)
+    .map((c) => {
+      const status = normalizeStatus(getStatus(c.cve, a.name));
+      return `<div class="modal-row">
+        <span class="h">${escapeHtml(c.cve)}</span>
+        <span class="c">${escapeHtml(c.severity)}</span>
+        <span class="status-badge status-${status}">${STATUS_LABELS[status]}</span>
+      </div>`;
+    })
     .join('');
   document.getElementById('vulnModal').classList.add('open');
 }
