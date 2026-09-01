@@ -5,10 +5,10 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'index.html'),
-        sla_analytics: resolve(__dirname, 'sla_analytics.html'),
-        coverage: resolve(__dirname, 'coverage.html'),
-        action_plan: resolve(__dirname, 'action_plan.html'),
+        main: resolve(import.meta.dirname, 'index.html'),
+        sla_analytics: resolve(import.meta.dirname, 'sla_analytics.html'),
+        coverage: resolve(import.meta.dirname, 'coverage.html'),
+        action_plan: resolve(import.meta.dirname, 'action_plan.html'),
       },
     },
   },

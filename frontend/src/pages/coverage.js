@@ -1,5 +1,6 @@
 import '../shared/theme.css';
 import { highlightActiveNav } from '../shared/nav.js';
+import { initThemeToggle } from '../shared/theme-toggle.js';
 import { escapeHtml } from '../shared/dom.js';
 
 const SEVERITY_COLOR = { critical: 'var(--critical)', high: 'var(--high)', medium: 'var(--medium)', low: 'var(--low)', unknown: 'var(--unknown)' };
@@ -257,4 +258,5 @@ document.getElementById('hostModal').addEventListener('click', (e) => {
 document.querySelector('#hostModal .modal-head button').addEventListener('click', closeModal);
 
 highlightActiveNav();
+initThemeToggle();
 loadData();

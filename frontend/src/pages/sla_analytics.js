@@ -1,5 +1,6 @@
 import '../shared/theme.css';
 import { highlightActiveNav } from '../shared/nav.js';
+import { initThemeToggle } from '../shared/theme-toggle.js';
 import { fetchJson } from '../shared/api.js';
 import { fmtDateShort, renderError } from '../shared/dom.js';
 
@@ -94,4 +95,5 @@ function renderTrend(days) {
 }
 
 highlightActiveNav();
+initThemeToggle();
 loadDashboard();

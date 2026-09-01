@@ -508,6 +508,14 @@ function renderTab() {
   filterRows();
 }
 
+function getProgressClass(percentage) {
+  if (percentage >= 100) return 'progress-complete';
+  if (percentage >= 75) return 'progress-high';
+  if (percentage >= 50) return 'progress-medium';
+  if (percentage >= 25) return 'progress-low';
+  return 'progress-critical';
+}
+
 // ---------------- Vue par CVE ----------------
 function renderCveTable() {
   const thead = document.getElementById('thead');
@@ -518,6 +526,7 @@ function renderCveTable() {
       <th data-key="cvss">CVSS</th>
       <th>Paquet(s)</th>
       <th data-key="agentCount">Agents touchés</th>
+      <th data-key="progression">Progression de traitement</th>
     </tr>`;
   thead.querySelectorAll('th[data-key]').forEach((th) => {
     th.addEventListener('click', () => {
@@ -529,10 +538,26 @@ function renderCveTable() {
   });
 
   const sorted = [...allCves].sort((a, b) => {
-    let av = a[cveSort.key];
-    let bv = b[cveSort.key];
-    if (cveSort.key === 'severity') { av = SEVERITY_WEIGHT[av] ?? 0; bv = SEVERITY_WEIGHT[bv] ?? 0; }
-    if (typeof av === 'string') return av.localeCompare(bv) * cveSort.dir;
+    let av;
+    let bv;
+
+    if (cveSort.key === 'progression') {
+      av = getCveProgress(a).percentage;
+      bv = getCveProgress(b).percentage;
+    } else {
+      av = a[cveSort.key];
+      bv = b[cveSort.key];
+    }
+
+    if (cveSort.key === 'severity') {
+      av = SEVERITY_WEIGHT[av] ?? 0;
+      bv = SEVERITY_WEIGHT[bv] ?? 0;
+    }
+
+    if (typeof av === 'string') {
+      return av.localeCompare(bv) * cveSort.dir;
+    }
+
     return ((av ?? 0) - (bv ?? 0)) * cveSort.dir;
   });
 
@@ -541,19 +566,60 @@ function renderCveTable() {
     .map((c) => {
       const color = SEVERITY_COLOR[c.severity] || 'var(--unknown)';
       const pkgPreview = c.packages.slice(0, 2).map(escapeHtml).join(', ') + (c.packages.length > 2 ? `, +${c.packages.length - 2}` : '');
+      const progress = getCveProgress(c);
+      const progressClass = getProgressClass(progress.percentage);
       const agentChips =
         c.agents.slice(0, previewCount).map((a) => `<span class="asset" data-cve="${escapeHtml(c.cve)}">${escapeHtml(a.name)}</span>`).join('') +
         (c.agents.length > previewCount ? `<span class="asset more" data-cve="${escapeHtml(c.cve)}">+${c.agents.length - previewCount}</span>` : '');
       const searchText = [c.cve, c.title, ...c.packages, ...c.agents.map((a) => a.name)].join(' ').toLowerCase();
 
       return `
-      <tr data-sev="${escapeHtml(c.severity)}" data-packages="${escapeHtml(c.packages.join('|'))}" data-text="${escapeHtml(searchText)}">
-        <td><span class="badge" style="background:${color}">${escapeHtml(c.severity)}</span></td>
-        <td>${escapeHtml(c.cve)}<span class="sub">${escapeHtml(c.title)}</span></td>
-        <td>${c.cvss != null ? c.cvss.toFixed(1) : '—'}</td>
-        <td>${pkgPreview || '—'}</td>
-        <td><div class="assets">${agentChips || '<span class="asset">—</span>'}</div></td>
-      </tr>`;
+<tr
+  data-sev="${escapeHtml(c.severity)}"
+  data-packages="${escapeHtml(c.packages.join('|'))}"
+  data-text="${escapeHtml(searchText)}"
+>
+  <td>
+    <span class="badge" style="background:${color}">
+      ${escapeHtml(c.severity)}
+    </span>
+  </td>
+
+  <td>
+    ${escapeHtml(c.cve)}
+    <span class="sub">${escapeHtml(c.title)}</span>
+  </td>
+
+  <td>
+    ${c.cvss != null ? c.cvss.toFixed(1) : '—'}
+  </td>
+
+  <td>
+    ${pkgPreview || '—'}
+  </td>
+
+  <td>
+    <div class="assets">
+      ${agentChips || '<span class="asset">—</span>'}
+    </div>
+  </td>
+
+  <td>
+  <div class="cve-progress">
+    <div class="cve-progress-info">
+      <span>${progress.validated}/${progress.total} agents</span>
+      <strong>${progress.percentage}%</strong>
+    </div>
+
+    <div class="cve-progress-bar">
+      <div
+        class="cve-progress-fill ${progressClass}"
+        style="width: ${progress.percentage}%"
+      ></div>
+    </div>
+  </div>
+</td>
+</tr>`;
     })
     .join('');
 
@@ -586,7 +652,7 @@ function buildCommentItems(trackingRow) {
       type: 'traitement',
       label: 'Traitement',
       author: trackingRow.treated_by,
-      text: trackingRow.treated_comment,
+      text: trackingRow.treatment_comment,
       date: trackingRow.treated_at,
     });
   }
@@ -595,7 +661,7 @@ function buildCommentItems(trackingRow) {
       type: 'validation',
       label: 'Validation',
       author: trackingRow.validated_by,
-      text: trackingRow.validated_comment,
+      text: trackingRow.validation_comment,
       date: trackingRow.validated_at,
     });
   }
@@ -618,6 +684,30 @@ function renderComments(trackingRow) {
         )
         .join('')}
     </div>`;
+}
+
+function getCveProgress(cve) {
+  const totalAgents = cve.agents.length;
+
+  if (totalAgents === 0) {
+    return {
+      validated: 0,
+      total: 0,
+      percentage: 0
+    };
+  }
+
+  const validated = cve.agents.filter((agent) => {
+    return getStatus(cve.cve, agent.name) === 'valide';
+  }).length;
+
+  const percentage = Math.round((validated / totalAgents) * 100);
+
+  return {
+    validated,
+    total: totalAgents,
+    percentage
+  };
 }
 
 function renderCveModalBody(c) {
