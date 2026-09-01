@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+<meta charset="UTF-8">
 <script>
   document.documentElement.setAttribute('data-theme', localStorage.getItem('dashboardTheme') || 'dark');
 </script>
-<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Couverture — Agents inactifs</title>
 </head>
@@ -20,14 +20,14 @@
   </div>
 
   <div class="nav-links">
-    <a href="/action_plan.html" data-page="action_plan">Plan d'action</a>
-    <a href="/coverage.html" data-page="coverage">Couverture</a>
-    <a href="/sla_analytics.html" data-page="sla_analytics">Vue d'ensemble</a>
+    <a href="/action_plan" data-page="action_plan">Plan d'action</a>
+    <a href="/coverage" data-page="coverage">Couverture</a>
+    <a href="/sla_analytics" data-page="sla_analytics">Vue d'ensemble</a>
   </div>
 
   <div class="nav-side nav-right">
     <button class="theme-toggle" id="themeToggle" aria-label="Changer de thème">☀️</button>
-    <button class="logout">Log Out</button>
+    <button class="logout" id="logoutBtn">Log Out</button>
   </div>
 </nav>
 
@@ -56,7 +56,6 @@
     <option value="name">Trier par nom</option>
   </select>
   <button id="reloadBtn">↻ Recharger</button>
-  <button id="exportBtn">Copier en Markdown</button>
 </div>
 
 <table id="table">

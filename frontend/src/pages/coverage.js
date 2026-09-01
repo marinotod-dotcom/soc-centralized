@@ -12,28 +12,49 @@ let allAgents = [];
 let currentSort = 'score';
 
 async function loadData() {
-  document.getElementById('subtitle').textContent = 'Chargement de data.json…';
+  document.getElementById('subtitle').textContent = 'Chargement des données…';
+
   try {
-    const res = await fetch('data.json', { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const [res] = await Promise.all([
+      fetch('/data/coverage/latest.json', {
+        cache: 'no-store',
+        credentials: 'include',
+      }),
+    ]);
+
+    if (!res.ok) {
+      throw new Error('HTTP ' + res.status);
+    }
+
     const json = await res.json();
+
     const agents = json?.agents;
-    if (!agents) throw new Error('Structure inattendue : agents introuvable');
+
+    if (!agents) {
+      throw new Error('Structure inattendue : agents introuvable');
+    }
 
     allAgents = enrichAgents(agents);
+
     document.getElementById('emptyState').style.display = 'none';
     document.getElementById('table').style.display = '';
+
     populateFilterOptions();
-    renderStats(json.meta);
+    renderStats(json.meta || {});
     renderGrouped();
     sortAndRender();
+
   } catch (err) {
+    console.error('Erreur chargement coverage:', err);
+
     document.getElementById('emptyReason').textContent = err.message;
     document.getElementById('emptyState').style.display = 'block';
     document.getElementById('table').style.display = 'none';
-    document.getElementById('subtitle').textContent = 'data.json introuvable ou invalide';
+    document.getElementById('subtitle').textContent =
+      'Impossible de charger les données';
   }
 }
+
 
 // ---------------------------------------------------------------
 // Transform: raw Wazuh agent records -> rows with computed fields
@@ -228,20 +249,6 @@ function closeModal() {
   document.getElementById('hostModal').classList.remove('open');
 }
 
-// ---------------------------------------------------------------
-// Export markdown
-// ---------------------------------------------------------------
-function exportMarkdown() {
-  const rows = [...allAgents].sort((a, b) => b.score - a.score);
-  let md = `# Couverture — Agents inactifs\n\n`;
-  md += `| # | Agent | IP | OS | Groupe(s) | Statut | Dernière connexion |\n`;
-  md += `|---|-------|----|----|-----------|--------|--------------------|\n`;
-  rows.forEach((a, i) => {
-    const lastSeen = a.neverConnected ? 'Jamais' : a.lastKeepAlive ? a.lastKeepAlive.slice(0, 10) : '—';
-    md += `| ${i + 1} | ${a.name} | ${a.ip} | ${a.os} | ${a.groups.join(', ') || '—'} | ${SEVERITY_LABEL[a.sevKey]} | ${lastSeen} |\n`;
-  });
-  navigator.clipboard.writeText(md);
-}
 
 // ---------------------------------------------------------------
 // Wire up event listeners (replaces inline onclick/oninput attrs)
@@ -251,7 +258,6 @@ document.getElementById('sevFilter').addEventListener('change', filterRows);
 document.getElementById('assetFilter').addEventListener('change', filterRows);
 document.getElementById('sortSelect').addEventListener('change', sortAndRender);
 document.getElementById('reloadBtn').addEventListener('click', loadData);
-document.getElementById('exportBtn').addEventListener('click', exportMarkdown);
 document.getElementById('hostModal').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) closeModal();
 });
