@@ -26,4 +26,4 @@ COPY alembic/ ./alembic
 COPY alembic.ini .
 COPY main.py .
 
-CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

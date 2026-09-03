@@ -1,4 +1,5 @@
 import '../shared/theme.css';
+import { getComments, addComment } from '../shared/vulnComments.js';
 import { initThemeToggle } from '../shared/theme-toggle.js';
 import { highlightActiveNav } from '../shared/nav.js';
 import { escapeHtml } from '../shared/dom.js';
@@ -13,23 +14,20 @@ let currentTab = 'cve';
 let cveSort = { key: 'cvss', dir: -1 };
 let agentSort = { key: 'cve_count', dir: -1 };
 let meta = {};
-let carouselResizeHandler = null; // pour pouvoir retirer l'ancien listener au reload
+let carouselResizeHandler = null;
 let carouselAutoPlayInterval = null;
 
-// --- Utilisateur connecté & statuts de suivi (remplace l'ancien localStorage) ---
-let currentUser = null; // { username, role, ... } — voir GET /api/me
-let vulnStatusMap = new Map(); // clé `${cve_id}|${agent_name}` -> ligne renvoyée par GET /api/vulnerabilities
+let currentUser = null;
+let vulnStatusMap = new Map();
 
 async function loadData() {
-  document.getElementById('subtitle').textContent = 'Chargement de data.json…';
+  document.getElementById('subtitle').textContent = 'Chargement…';
   try {
     const [res] = await Promise.all([
       fetch('/data/action_plan/latest.json', {
-        cache: 'no-store',
         credentials: 'include',
       }),
       fetchCurrentUser(),
-      fetchVulnStatuses(),
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
@@ -56,9 +54,6 @@ async function loadData() {
   }
 }
 
-// ---------------------------------------------------------------
-// Auth / statuts de suivi (API)
-// ---------------------------------------------------------------
 async function fetchCurrentUser() {
   try {
     const res = await fetch('/api/me', { credentials: 'include' });
@@ -70,15 +65,17 @@ async function fetchCurrentUser() {
   }
 }
 
-async function fetchVulnStatuses() {
+async function fetchVulnStatusesForCve(cveId, forceRefresh = false) {
   try {
-    const res = await fetch('/api/vulnerabilities', { credentials: 'include' });
+    const res = await fetch(`/api/vulnerabilities/by-cve/${encodeURIComponent(cveId)}`, {
+      credentials: 'include',
+      headers: forceRefresh ? { 'X-Force-Refresh': '1' } : {},
+    });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const rows = await res.json();
-    vulnStatusMap = new Map(rows.map((r) => [`${r.cve_id}|${r.agent_name}`, r]));
+    rows.forEach((r) => vulnStatusMap.set(`${r.cve_id}|${r.agent_name}`, r));
   } catch (err) {
-    console.error('Impossible de récupérer les statuts de suivi', err);
-    vulnStatusMap = new Map();
+    console.error('Impossible de récupérer les statuts de suivi pour ' + cveId, err);
   }
 }
 
@@ -96,7 +93,7 @@ async function treatVulnerabilityApi(cveId, agentName, comment) {
   return res.json();
 }
 
-async function validateVulnerabilityApi(cveId, agentName, comment) {
+async function validateVulnerabilityApi(cveId, agentName) {
   const url =
     `/api/vulnerabilities/` +
     `${encodeURIComponent(cveId)}/` +
@@ -105,35 +102,24 @@ async function validateVulnerabilityApi(cveId, agentName, comment) {
   const res = await fetch(url, {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ comment: comment || null }),
   });
 
   if (!res.ok) {
     let detail = '';
-
     try {
       const data = await res.json();
       detail = data.detail || '';
     } catch {
       detail = await res.text().catch(() => '');
     }
-
-    const error = new Error(
-      `HTTP ${res.status}${detail ? ` : ${detail}` : ''}`
-    );
-
+    const error = new Error(`HTTP ${res.status}${detail ? ` : ${detail}` : ''}`);
     error.status = res.status;
-
     throw error;
   }
 
   return res.json();
 }
 
-// L'utilisateur "technicien" peut marquer traité, "admin_cyber" peut valider.
-// Cela reflète les require_role(...) côté API — un onglet désactivé côté
-// front n'est qu'un confort UX, la vraie protection reste côté serveur.
 function canTreat() {
   return currentUser?.role === 'technicien';
 }
@@ -141,78 +127,15 @@ function canValidate() {
   return currentUser?.role === 'admin_cyber';
 }
 
-// ---------------------------------------------------------------
-// Statut : normalisation centralisée
-// ---------------------------------------------------------------
-// Le backend renvoie l'enum de statut telle qu'elle est stockée (souvent en
-// MAJUSCULES, ex: "NOUVEAU", "VALIDE"), alors que STATUS_LABELS et le CSS
-// (.status-nouveau, .status-valide, ...) attendent des clés en minuscules.
-// Sans cette normalisation, STATUS_LABELS[status] renvoie undefined et
-// "undefined" s'affiche tel quel dans le badge. On centralise ici la
-// normalisation + le fallback pour ne plus jamais afficher une valeur
-// inconnue.
-function normalizeStatus(rawStatus) {
-  const s = (rawStatus || '').toString().toLowerCase();
-  return STATUS_LABELS[s] ? s : 'nouveau';
-}
-
 function getStatus(cve, agentName) {
   const row = vulnStatusMap.get(`${cve}|${agentName}`);
-  return normalizeStatus(row?.status);
-}
-
-// ---------------------------------------------------------------
-// Notifications (remplace les alert())
-// ---------------------------------------------------------------
-function showNotification(message, type = 'error') {
-  let notification = document.getElementById('appNotification');
-
-  if (!notification) {
-    notification = document.createElement('div');
-    notification.id = 'appNotification';
-
-    Object.assign(notification.style, {
-      position: 'fixed',
-      top: '24px',
-      right: '24px',
-      zIndex: '99999',
-      padding: '14px 20px',
-      borderRadius: '8px',
-      fontSize: '14px',
-      fontWeight: '600',
-      maxWidth: '400px',
-      boxShadow: '0 8px 25px rgba(0, 0, 0, 0.2)',
-      transition: 'opacity 0.3s ease',
-    });
-
-    document.body.appendChild(notification);
+  if (!row || !row.status) {
+    return 'nouveau';
   }
-
-  notification.textContent = message;
-
-  notification.style.background = type === 'error' ? '#fee2e2' : '#dcfce7';
-  notification.style.color = type === 'error' ? '#991b1b' : '#166534';
-  notification.style.opacity = '1';
-
-  clearTimeout(notification._timeout);
-
-  notification._timeout = setTimeout(() => {
-    notification.style.opacity = '0';
-  }, 4000);
+  const status = row.status.toLowerCase();
+  return STATUS_LABELS[status] ? status : 'nouveau';
 }
 
-// ---------------------------------------------------------------
-// Transform: raw Wazuh vulnerabilities_by_agent buckets
-// (one entry per paire CVE x agent) -> vue par CVE + vue par agent
-//
-// NOTE IMPORTANTE : vulnerability.package ne contient QUE `name` et
-// `condition` dans les exports Wazuh (vérifié sur data_S34_2026.json,
-// 8422 buckets, 0 avec un champ `version`). Il n'y a donc pas de "version
-// installée" fiable dans ces données — seulement le nom du paquet et la
-// condition qui a déclenché l'alerte (ex: "Package less than 3.10.12").
-// On garde ce champ sous le nom `condition` pour ne pas laisser croire
-// qu'on affiche une version réelle.
-// ---------------------------------------------------------------
 function transformBuckets(buckets) {
   const cveMap = new Map();
   const agentMap = new Map();
@@ -232,7 +155,6 @@ function transformBuckets(buckets) {
     const cvssRaw = vuln.cvss?.cvss3?.base_score;
     const cvss = cvssRaw != null ? parseFloat(cvssRaw) : null;
 
-    // --- CVE aggregation ---
     if (!cveMap.has(cve)) {
       cveMap.set(cve, { cve, severity, cvss, title, packages: new Set(), agents: [], agentIdsSeen: new Set() });
     }
@@ -242,12 +164,9 @@ function transformBuckets(buckets) {
     c.packages.add(pkgName);
     if (!c.agentIdsSeen.has(agentId)) {
       c.agentIdsSeen.add(agentId);
-      // on garde le paquet ET la condition propres à CET agent, pour ne
-      // jamais les recombiner avec ceux d'un autre agent plus tard.
       c.agents.push({ id: agentId, name: agentName, package: pkgName, condition: pkgCondition });
     }
 
-    // --- Agent aggregation ---
     if (!agentMap.has(agentId)) {
       agentMap.set(agentId, { id: agentId, name: agentName, cves: new Map(), maxSeverity: 'None' });
     }
@@ -280,9 +199,6 @@ function transformBuckets(buckets) {
   return { cves, agents };
 }
 
-// ---------------------------------------------------------------
-// Rendering
-// ---------------------------------------------------------------
 function renderPeriod() {
   if (meta.date_from && meta.date_to) {
     document.getElementById('period').textContent = `${meta.date_from.slice(0, 10)} → ${meta.date_to.slice(0, 10)}`;
@@ -305,9 +221,6 @@ function renderStats() {
   `;
 }
 
-// Regroupe par (paquet, condition) RÉELLEMENT observés ensemble sur un même
-// agent — corrige le bug qui recombinait tous les paquets d'une CVE avec
-// la condition de n'importe quel agent.
 function buildRemediations() {
   const remediationMap = new Map();
 
@@ -388,7 +301,6 @@ function initRemediationCarousel() {
 
   if (!track || !prev || !next) return;
 
-  // Nettoyage des anciens listeners
   const prevClone = prev.cloneNode(true);
   const nextClone = next.cloneNode(true);
 
@@ -403,7 +315,6 @@ function initRemediationCarousel() {
     carouselResizeHandler = null;
   }
 
-  // Nettoyage d'un éventuel ancien interval
   if (carouselAutoPlayInterval) {
     clearInterval(carouselAutoPlayInterval);
     carouselAutoPlayInterval = null;
@@ -437,40 +348,23 @@ function initRemediationCarousel() {
     const cardWidth = cards[0].getBoundingClientRect().width;
     const gap = 16;
 
-    track.style.transform =
-      `translateX(-${currentIndex * (cardWidth + gap)}px)`;
+    track.style.transform = `translateX(-${currentIndex * (cardWidth + gap)}px)`;
 
     prev.disabled = currentIndex === 0;
     next.disabled = currentIndex >= maxIndex;
   }
 
-  // Bouton précédent
   prev.addEventListener('click', () => {
     const cardsPerView = getCardsPerView();
     const maxIndex = Math.max(0, cards.length - cardsPerView);
-
-    if (currentIndex > 0) {
-      currentIndex--;
-    } else {
-      // Si on est au début, on revient à la fin
-      currentIndex = maxIndex;
-    }
-
+    currentIndex = currentIndex > 0 ? currentIndex - 1 : maxIndex;
     updateCarousel();
   });
 
-  // Bouton suivant
   next.addEventListener('click', () => {
     const cardsPerView = getCardsPerView();
     const maxIndex = Math.max(0, cards.length - cardsPerView);
-
-    if (currentIndex < maxIndex) {
-      currentIndex++;
-    } else {
-      // Si on est à la fin, on revient au début
-      currentIndex = 0;
-    }
-
+    currentIndex = currentIndex < maxIndex ? currentIndex + 1 : 0;
     updateCarousel();
   });
 
@@ -479,24 +373,13 @@ function initRemediationCarousel() {
 
   updateCarousel();
 
-  // ============================
-  // DÉFILEMENT AUTOMATIQUE
-  // ============================
-
   const AUTO_PLAY_DELAY = 3000;
 
   carouselAutoPlayInterval = setInterval(() => {
     const cardsPerView = getCardsPerView();
     const maxIndex = Math.max(0, cards.length - cardsPerView);
-
     if (maxIndex === 0) return;
-
-    if (currentIndex < maxIndex) {
-      currentIndex++;
-    } else {
-      currentIndex = 0;
-    }
-
+    currentIndex = currentIndex < maxIndex ? currentIndex + 1 : 0;
     updateCarousel();
   }, AUTO_PLAY_DELAY);
 }
@@ -506,14 +389,6 @@ function renderTab() {
   if (currentTab === 'cve') renderCveTable();
   else renderAgentTable();
   filterRows();
-}
-
-function getProgressClass(percentage) {
-  if (percentage >= 100) return 'progress-complete';
-  if (percentage >= 75) return 'progress-high';
-  if (percentage >= 50) return 'progress-medium';
-  if (percentage >= 25) return 'progress-low';
-  return 'progress-critical';
 }
 
 // ---------------- Vue par CVE ----------------
@@ -526,7 +401,6 @@ function renderCveTable() {
       <th data-key="cvss">CVSS</th>
       <th>Paquet(s)</th>
       <th data-key="agentCount">Agents touchés</th>
-      <th data-key="progression">Progression de traitement</th>
     </tr>`;
   thead.querySelectorAll('th[data-key]').forEach((th) => {
     th.addEventListener('click', () => {
@@ -538,26 +412,10 @@ function renderCveTable() {
   });
 
   const sorted = [...allCves].sort((a, b) => {
-    let av;
-    let bv;
-
-    if (cveSort.key === 'progression') {
-      av = getCveProgress(a).percentage;
-      bv = getCveProgress(b).percentage;
-    } else {
-      av = a[cveSort.key];
-      bv = b[cveSort.key];
-    }
-
-    if (cveSort.key === 'severity') {
-      av = SEVERITY_WEIGHT[av] ?? 0;
-      bv = SEVERITY_WEIGHT[bv] ?? 0;
-    }
-
-    if (typeof av === 'string') {
-      return av.localeCompare(bv) * cveSort.dir;
-    }
-
+    let av = a[cveSort.key];
+    let bv = b[cveSort.key];
+    if (cveSort.key === 'severity') { av = SEVERITY_WEIGHT[av] ?? 0; bv = SEVERITY_WEIGHT[bv] ?? 0; }
+    if (typeof av === 'string') return av.localeCompare(bv) * cveSort.dir;
     return ((av ?? 0) - (bv ?? 0)) * cveSort.dir;
   });
 
@@ -566,60 +424,19 @@ function renderCveTable() {
     .map((c) => {
       const color = SEVERITY_COLOR[c.severity] || 'var(--unknown)';
       const pkgPreview = c.packages.slice(0, 2).map(escapeHtml).join(', ') + (c.packages.length > 2 ? `, +${c.packages.length - 2}` : '');
-      const progress = getCveProgress(c);
-      const progressClass = getProgressClass(progress.percentage);
       const agentChips =
         c.agents.slice(0, previewCount).map((a) => `<span class="asset" data-cve="${escapeHtml(c.cve)}">${escapeHtml(a.name)}</span>`).join('') +
         (c.agents.length > previewCount ? `<span class="asset more" data-cve="${escapeHtml(c.cve)}">+${c.agents.length - previewCount}</span>` : '');
       const searchText = [c.cve, c.title, ...c.packages, ...c.agents.map((a) => a.name)].join(' ').toLowerCase();
 
       return `
-<tr
-  data-sev="${escapeHtml(c.severity)}"
-  data-packages="${escapeHtml(c.packages.join('|'))}"
-  data-text="${escapeHtml(searchText)}"
->
-  <td>
-    <span class="badge" style="background:${color}">
-      ${escapeHtml(c.severity)}
-    </span>
-  </td>
-
-  <td>
-    ${escapeHtml(c.cve)}
-    <span class="sub">${escapeHtml(c.title)}</span>
-  </td>
-
-  <td>
-    ${c.cvss != null ? c.cvss.toFixed(1) : '—'}
-  </td>
-
-  <td>
-    ${pkgPreview || '—'}
-  </td>
-
-  <td>
-    <div class="assets">
-      ${agentChips || '<span class="asset">—</span>'}
-    </div>
-  </td>
-
-  <td>
-  <div class="cve-progress">
-    <div class="cve-progress-info">
-      <span>${progress.validated}/${progress.total} agents</span>
-      <strong>${progress.percentage}%</strong>
-    </div>
-
-    <div class="cve-progress-bar">
-      <div
-        class="cve-progress-fill ${progressClass}"
-        style="width: ${progress.percentage}%"
-      ></div>
-    </div>
-  </div>
-</td>
-</tr>`;
+      <tr data-sev="${escapeHtml(c.severity)}" data-packages="${escapeHtml(c.packages.join('|'))}" data-text="${escapeHtml(searchText)}">
+        <td><span class="badge" style="background:${color}">${escapeHtml(c.severity)}</span></td>
+        <td>${escapeHtml(c.cve)}<span class="sub">${escapeHtml(c.title)}</span></td>
+        <td>${c.cvss != null ? c.cvss.toFixed(1) : '—'}</td>
+        <td>${pkgPreview || '—'}</td>
+        <td><div class="assets">${agentChips || '<span class="asset">—</span>'}</div></td>
+      </tr>`;
     })
     .join('');
 
@@ -628,86 +445,19 @@ function renderCveTable() {
   });
 }
 
-function openCveModal(cveId) {
+async function openCveModal(cveId) {
   const c = allCves.find((x) => x.cve === cveId);
   if (!c) return;
+
   document.getElementById('modalTitle').textContent = `${c.cve} — ${c.agents.length} agents`;
   document.getElementById('modalSearch').value = '';
   document.getElementById('modalStatusFilter').value = '';
-  renderCveModalBody(c);
+  document.getElementById('modalBody').innerHTML = '<div class="modal-loading">Chargement des statuts…</div>';
   document.getElementById('vulnModal').classList.add('open');
-}
 
-// ---------------------------------------------------------------
-// Commentaires : construit la liste "traitement"/"validation" à partir
-// d'une ligne de suivi renvoyée par GET /api/vulnerabilities.
-// NOTE: nécessite que l'API renvoie aussi treated_comment / validated_comment
-// (voir patch backend). Si ces champs ne sont pas encore exposés, on affiche
-// un texte de repli plutôt que de ne rien montrer.
-// ---------------------------------------------------------------
-function buildCommentItems(trackingRow) {
-  const items = [];
-  if (trackingRow?.treated_by) {
-    items.push({
-      type: 'traitement',
-      label: 'Traitement',
-      author: trackingRow.treated_by,
-      text: trackingRow.treatment_comment,
-      date: trackingRow.treated_at,
-    });
-  }
-  if (trackingRow?.validated_by) {
-    items.push({
-      type: 'validation',
-      label: 'Validation',
-      author: trackingRow.validated_by,
-      text: trackingRow.validation_comment,
-      date: trackingRow.validated_at,
-    });
-  }
-  return items;
-}
+  await fetchVulnStatusesForCve(cveId);
 
-function renderComments(trackingRow) {
-  const items = buildCommentItems(trackingRow);
-  if (!items.length) return '';
-  return `
-    <div class="modal-row-comments">
-      ${items
-        .map(
-          (it) => `
-        <div class="comment-item comment-${it.type}">
-          <span class="comment-author">${escapeHtml(it.author)} — ${it.label}</span>
-          <span class="comment-text">${escapeHtml(it.text || '(pas de commentaire)')}</span>
-          ${it.date ? `<span class="comment-date">${new Date(it.date).toLocaleString('fr-FR')}</span>` : ''}
-        </div>`
-        )
-        .join('')}
-    </div>`;
-}
-
-function getCveProgress(cve) {
-  const totalAgents = cve.agents.length;
-
-  if (totalAgents === 0) {
-    return {
-      validated: 0,
-      total: 0,
-      percentage: 0
-    };
-  }
-
-  const validated = cve.agents.filter((agent) => {
-    return getStatus(cve.cve, agent.name) === 'valide';
-  }).length;
-
-  const percentage = Math.round((validated / totalAgents) * 100);
-
-  return {
-    validated,
-    total: totalAgents,
-    percentage
-  };
+  renderCveModalBody(c);
 }
 
 function renderCveModalBody(c) {
@@ -716,9 +466,28 @@ function renderCveModalBody(c) {
 
   document.getElementById('modalBody').innerHTML = c.agents
     .map((a) => {
+      const status = getStatus(c.cve, a.name);
       const trackingRow = vulnStatusMap.get(`${c.cve}|${a.name}`);
-      const status = normalizeStatus(trackingRow?.status);
-      const searchText = `${a.name}`.toLowerCase();
+      const comments = getComments(c.cve, a.name);
+      const searchText = `${a.name} ${a.id}`.toLowerCase();
+
+      const commentsHtml = comments.length
+        ? `<div class="modal-row-comments">
+            ${comments.map((cm) => `
+              <div class="comment-item comment-${cm.type}">
+                <span class="comment-author">${escapeHtml(cm.author)}</span>
+                <span class="comment-text">${escapeHtml(cm.text)}</span>
+                <span class="comment-date">${new Date(cm.createdAt).toLocaleString('fr-FR')}</span>
+              </div>`).join('')}
+          </div>`
+        : '';
+
+      const trackingHtml = trackingRow
+        ? `<div class="modal-row-tracking">
+            ${trackingRow.treated_by ? `<span>Traité par ${escapeHtml(trackingRow.treated_by)}</span>` : ''}
+            ${trackingRow.validated_by ? `<span>Validé par ${escapeHtml(trackingRow.validated_by)}</span>` : ''}
+          </div>`
+        : '';
 
       return `
       <div class="modal-row-detailed" data-status="${status}" data-search="${escapeHtml(searchText)}">
@@ -728,7 +497,8 @@ function renderCveModalBody(c) {
           <span class="status-badge status-${status}">${STATUS_LABELS[status]}</span>
         </div>
 
-        ${renderComments(trackingRow)}
+        ${trackingHtml}
+        ${commentsHtml}
 
         <div class="modal-row-actions">
           <button
@@ -752,7 +522,7 @@ function renderCveModalBody(c) {
         </div>
 
         <div class="modal-row-comment-form" data-form="valide" hidden>
-          <textarea placeholder="Réponse de validation (optionnel)..."></textarea>
+          <textarea placeholder="Réponse de validation (optionnel, non transmise à l'API)..."></textarea>
           <div class="form-actions">
             <button class="btn-ghost" data-cancel-form>Annuler</button>
             <button class="btn-primary" data-submit-form="valide" data-cve="${escapeHtml(c.cve)}" data-agent="${escapeHtml(a.name)}">Valider</button>
@@ -769,9 +539,8 @@ function renderCveModalBody(c) {
 function wireCveModalRowEvents(c) {
   const body = document.getElementById('modalBody');
 
-  // Ouvre/ferme le formulaire au clic sur "Marquer traité" / "Valider"
   body.querySelectorAll('button[data-toggle-form]').forEach((btn) => {
-    if (btn.disabled) return; // pas de rôle -> pas de formulaire
+    if (btn.disabled) return;
     btn.addEventListener('click', () => {
       const row = btn.closest('.modal-row-detailed');
       const formType = btn.dataset.toggleForm;
@@ -779,7 +548,7 @@ function wireCveModalRowEvents(c) {
       const wasHidden = targetForm.hidden;
 
       row.querySelectorAll('.modal-row-comment-form').forEach((f) => { f.hidden = true; });
-      targetForm.hidden = !wasHidden; // reclique sur le même bouton = referme le formulaire
+      targetForm.hidden = !wasHidden;
       if (!targetForm.hidden) targetForm.querySelector('textarea')?.focus();
     });
   });
@@ -794,7 +563,6 @@ function wireCveModalRowEvents(c) {
     btn.addEventListener('click', async () => {
       const { submitForm: action, cve, agent } = btn.dataset;
 
-      // Garde-fou côté client — la vraie protection reste le require_role() de l'API
       if (action === 'traite' && !canTreat()) return;
       if (action === 'valide' && !canValidate()) return;
 
@@ -805,9 +573,8 @@ function wireCveModalRowEvents(c) {
       if (action === 'traite' && !text) {
         textarea.classList.add('input-error');
         textarea.focus();
-        return; // commentaire obligatoire pour "Marquer traité"
+        return;
       }
-      textarea.classList.remove('input-error');
 
       btn.disabled = true;
       const originalLabel = btn.textContent;
@@ -816,19 +583,108 @@ function wireCveModalRowEvents(c) {
       try {
         if (action === 'traite') {
           await treatVulnerabilityApi(cve, agent, text);
+
+          addComment(cve, agent, {
+            type: 'traitement',
+            text: text || '(sans commentaire)',
+          });
+
+          await fetchVulnStatusesForCve(cve, true);
+          renderCveModalBody(c);
+
         } else {
-          await validateVulnerabilityApi(cve, agent, text || null);
+          try {
+            await validateVulnerabilityApi(cve, agent);
+
+            if (text) {
+              addComment(cve, agent, {
+                type: 'validation',
+                text,
+              });
+            }
+
+            await fetchVulnStatusesForCve(cve, true);
+            renderCveModalBody(c);
+
+          } catch (err) {
+            console.error('Validation refusée :', err);
+
+            const key = `${cve}|${agent}`;
+            const existingRow = vulnStatusMap.get(key);
+
+            if (existingRow) {
+              existingRow.status = 'rejete';
+            } else {
+              vulnStatusMap.set(key, {
+                cve_id: cve,
+                agent_name: agent,
+                status: 'rejete',
+                treated_by: null,
+                treated_at: null,
+                validated_by: null,
+                validated_at: null,
+              });
+            }
+
+            renderCveModalBody(c);
+
+            showNotification(
+              'Wazuh détecte encore cette vulnérabilité',
+              'error'
+            );
+          }
         }
-        await fetchVulnStatuses();
-        renderCveModalBody(c);
-        showNotification('Statut mis à jour avec succès', 'success');
+
       } catch (err) {
-        showNotification("Erreur lors de l'enregistrement : " + (err.message || err), 'error');
+        console.error('Échec de l’action :', err);
+
+        showNotification(
+          `Échec de l'action : ${err.message}`,
+          'error'
+        );
+
+      } finally {
         btn.disabled = false;
         btn.textContent = originalLabel;
       }
     });
   });
+}
+
+function showNotification(message, type = 'error') {
+  let notification = document.getElementById('appNotification');
+
+  if (!notification) {
+    notification = document.createElement('div');
+    notification.id = 'appNotification';
+
+    Object.assign(notification.style, {
+      position: 'fixed',
+      top: '24px',
+      right: '24px',
+      zIndex: '99999',
+      padding: '14px 20px',
+      borderRadius: '8px',
+      fontSize: '14px',
+      fontWeight: '600',
+      maxWidth: '400px',
+      boxShadow: '0 8px 25px rgba(0, 0, 0, 0.2)',
+      transition: 'opacity 0.3s ease',
+    });
+
+    document.body.appendChild(notification);
+  }
+
+  notification.textContent = message;
+  notification.style.background = type === 'error' ? '#fee2e2' : '#dcfce7';
+  notification.style.color = type === 'error' ? '#991b1b' : '#166534';
+  notification.style.opacity = '1';
+
+  clearTimeout(notification._timeout);
+
+  notification._timeout = setTimeout(() => {
+    notification.style.opacity = '0';
+  }, 4000);
 }
 
 function filterModalRows() {
@@ -897,14 +753,7 @@ function openAgentModal(agentId) {
   if (!a) return;
   document.getElementById('modalTitle').textContent = `${a.name} — ${a.cves.length} CVE`;
   document.getElementById('modalBody').innerHTML = a.cves
-    .map((c) => {
-      const status = normalizeStatus(getStatus(c.cve, a.name));
-      return `<div class="modal-row">
-        <span class="h">${escapeHtml(c.cve)}</span>
-        <span class="c">${escapeHtml(c.severity)}</span>
-        <span class="status-badge status-${status}">${STATUS_LABELS[status]}</span>
-      </div>`;
-    })
+    .map((c) => `<div class="modal-row"><span class="h">${escapeHtml(c.cve)}</span><span class="c">${escapeHtml(c.severity)}</span></div>`)
     .join('');
   document.getElementById('vulnModal').classList.add('open');
 }
@@ -921,7 +770,6 @@ function filterRows() {
 
     const matchesQuery = !q || text.includes(q);
     const matchesSev = !sev || row.dataset.sev === sev;
-    // vue "Par agent" : pas de data-packages -> le filtre paquet est ignoré, pas bloquant
     const matchesPkg = !pkg || currentTab !== 'cve' || rowPackages.includes(pkg);
 
     row.classList.toggle('row-hidden', !(matchesQuery && matchesSev && matchesPkg));
@@ -933,7 +781,7 @@ function populatePackageFilter() {
   allCves.forEach((c) => c.packages.forEach((p) => pkgSet.add(p)));
   const select = document.getElementById('paqFilter');
   if (!select) return;
-  const current = select.value; // préserve la sélection si on recharge
+  const current = select.value;
   select.innerHTML =
     '<option value="">Tous paquets</option>' +
     Array.from(pkgSet).sort().map((p) => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');

@@ -18,7 +18,7 @@ def login(response: Response, username: str = Form(...), password: str = Form(..
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=True,
+        #secure=True,
         samesite="strict",
         max_age=3600,
     )

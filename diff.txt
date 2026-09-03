@@ -1,0 +1,730 @@
+diff --git a/backend/src/api/main.py b/backend/src/api/main.py
+index 9fe3140..b45e505 100644
+--- a/backend/src/api/main.py
++++ b/backend/src/api/main.py
+@@ -27,6 +27,48 @@ dashboard_service = SlaAnalyticsService()
+ def get_me(identity: dict = Depends(require_role("technicien", "admin_cyber"))):
+     return identity
+ 
++@app.get("/api/vulnerabilities/by-cve/{cve_id}", response_class=ORJSONResponse)
++def get_vulnerability_statuses_for_cve(
++    cve_id: str,
++    _=Depends(require_role("technicien", "admin_cyber")),
++):
++    with get_session() as db:
++        rows = db.execute(
++            select(
++                VulnerabilityTracking.cve_id,
++                VulnerabilityTracking.agent_name,
++                VulnerabilityTracking.severity,
++                VulnerabilityTracking.package,
++                VulnerabilityTracking.cvss,
++                VulnerabilityTracking.fix_version,
++                VulnerabilityTracking.status,
++                VulnerabilityTracking.treated_by,
++                VulnerabilityTracking.treated_at,
++                VulnerabilityTracking.treatment_comment,
++                VulnerabilityTracking.validated_by,
++                VulnerabilityTracking.validated_at,
++                VulnerabilityTracking.validation_comment,
++            ).where(VulnerabilityTracking.cve_id == cve_id)
++        ).all()
++        return [
++            {
++                "cve_id": r.cve_id,
++                "agent_name": r.agent_name,
++                "severity": r.severity,
++                "package": r.package,
++                "cvss": r.cvss,
++                "fix_version": r.fix_version,
++                "status": r.status.value,
++                "treated_by": r.treated_by,
++                "treated_at": r.treated_at.isoformat() if r.treated_at else None,
++                "treatment_comment": r.treatment_comment or [],
++                "validated_by": r.validated_by,
++                "validated_at": r.validated_at.isoformat() if r.validated_at else None,
++                "validation_comment": r.validation_comment or [],
++            }
++            for r in rows
++        ]
++
+ @app.get("/api/vulnerabilities", response_class=ORJSONResponse)
+ def list_vulnerabilities(_=Depends(require_role("technicien", "admin_cyber"))):
+     t0 = time.perf_counter()
+diff --git a/frontend/frontend.conf b/frontend/frontend.conf
+index 6c37687..6242b65 100644
+--- a/frontend/frontend.conf
++++ b/frontend/frontend.conf
+@@ -204,4 +204,21 @@ server {
+         proxy_set_header X-Forwarded-Proto $scheme;
+         proxy_set_header Cookie $http_cookie;
+     }
++
++    location ~ ^/api/vulnerabilities/by-cve/ {
++        proxy_pass http://vuln-api:8000;
++
++        proxy_cache data_cache;
++        proxy_cache_valid 200 60s;
++        proxy_cache_key $uri$http_cookie;
++        proxy_cache_bypass $http_x_force_refresh;
++        proxy_no_cache $http_x_force_refresh;
++        add_header X-Cache-Status $upstream_cache_status;
++
++        proxy_set_header Host $host;
++        proxy_set_header X-Real-IP $remote_addr;
++        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
++        proxy_set_header X-Forwarded-Proto $scheme;
++        proxy_set_header Cookie $http_cookie;
++    }
+ } 
+diff --git a/frontend/src/pages/vulnerabilites.js b/frontend/src/pages/vulnerabilites.js
+index f7f8327..85c1877 100644
+--- a/frontend/src/pages/vulnerabilites.js
++++ b/frontend/src/pages/vulnerabilites.js
+@@ -1,4 +1,5 @@
+ import '../shared/theme.css';
++import { getComments, addComment } from '../shared/vulnComments.js';
+ import { initThemeToggle } from '../shared/theme-toggle.js';
+ import { highlightActiveNav } from '../shared/nav.js';
+ import { escapeHtml } from '../shared/dom.js';
+@@ -21,14 +22,13 @@ let currentUser = null; // { username, role, ... } — voir GET /api/me
+ let vulnStatusMap = new Map(); // clé `${cve_id}|${agent_name}` -> ligne renvoyée par GET /api/vulnerabilities
+ 
+ async function loadData() {
+-  document.getElementById('subtitle').textContent = 'Chargement de data.json…';
++  document.getElementById('subtitle').textContent = 'Chargement…';
+   try {
+     const [res] = await Promise.all([
+       fetch('/data/action_plan/latest.json', {
+         credentials: 'include',
+       }),
+       fetchCurrentUser(),
+-      fetchVulnStatuses(),
+     ]);
+     if (!res.ok) throw new Error('HTTP ' + res.status);
+     const json = await res.json();
+@@ -43,7 +43,6 @@ async function loadData() {
+     document.getElementById('emptyState').style.display = 'none';
+     document.getElementById('content').style.display = 'block';
+     renderStats();
+-    populatePackageFilter();
+     renderPeriod();
+     renderRemediations();
+     renderTab();
+@@ -69,9 +68,12 @@ async function fetchCurrentUser() {
+   }
+ }
+ 
+-async function fetchVulnStatuses() {
++/*async function fetchVulnStatuses() {
+   try {
+-    const res = await fetch('/api/vulnerabilities', { credentials: 'include' });
++     const res = await fetch('/api/vulnerabilities', {
++      credentials: 'include',
++      headers: forceRefresh ? { 'X-Force-Refresh': '1' } : {},
++    });
+     if (!res.ok) throw new Error('HTTP ' + res.status);
+     const rows = await res.json();
+     vulnStatusMap = new Map(rows.map((r) => [`${r.cve_id}|${r.agent_name}`, r]));
+@@ -79,6 +81,20 @@ async function fetchVulnStatuses() {
+     console.error('Impossible de récupérer les statuts de suivi', err);
+     vulnStatusMap = new Map();
+   }
++}*/
++
++async function fetchVulnStatusesForCve(cveId, forceRefresh = false) {
++  try {
++    const res = await fetch(`/api/vulnerabilities/by-cve/${encodeURIComponent(cveId)}`, {
++      credentials: 'include',
++      headers: forceRefresh ? { 'X-Force-Refresh': '1' } : {},
++    });
++    if (!res.ok) throw new Error('HTTP ' + res.status);
++    const rows = await res.json();
++    rows.forEach((r) => vulnStatusMap.set(`${r.cve_id}|${r.agent_name}`, r));
++  } catch (err) {
++    console.error('Impossible de récupérer les statuts de suivi pour ' + cveId, err);
++  }
+ }
+ 
+ async function treatVulnerabilityApi(cveId, agentName, comment) {
+@@ -95,7 +111,7 @@ async function treatVulnerabilityApi(cveId, agentName, comment) {
+   return res.json();
+ }
+ 
+-async function validateVulnerabilityApi(cveId, agentName, comment) {
++async function validateVulnerabilityApi(cveId, agentName) {
+   const url =
+     `/api/vulnerabilities/` +
+     `${encodeURIComponent(cveId)}/` +
+@@ -104,8 +120,6 @@ async function validateVulnerabilityApi(cveId, agentName, comment) {
+   const res = await fetch(url, {
+     method: 'POST',
+     credentials: 'include',
+-    headers: { 'Content-Type': 'application/json' },
+-    body: JSON.stringify({ comment: comment || null }),
+   });
+ 
+   if (!res.ok) {
+@@ -140,66 +154,6 @@ function canValidate() {
+   return currentUser?.role === 'admin_cyber';
+ }
+ 
+-// ---------------------------------------------------------------
+-// Statut : normalisation centralisée
+-// ---------------------------------------------------------------
+-// Le backend renvoie l'enum de statut telle qu'elle est stockée (souvent en
+-// MAJUSCULES, ex: "NOUVEAU", "VALIDE"), alors que STATUS_LABELS et le CSS
+-// (.status-nouveau, .status-valide, ...) attendent des clés en minuscules.
+-// Sans cette normalisation, STATUS_LABELS[status] renvoie undefined et
+-// "undefined" s'affiche tel quel dans le badge. On centralise ici la
+-// normalisation + le fallback pour ne plus jamais afficher une valeur
+-// inconnue.
+-function normalizeStatus(rawStatus) {
+-  const s = (rawStatus || '').toString().toLowerCase();
+-  return STATUS_LABELS[s] ? s : 'nouveau';
+-}
+-
+-function getStatus(cve, agentName) {
+-  const row = vulnStatusMap.get(`${cve}|${agentName}`);
+-  return normalizeStatus(row?.status);
+-}
+-
+-// ---------------------------------------------------------------
+-// Notifications (remplace les alert())
+-// ---------------------------------------------------------------
+-function showNotification(message, type = 'error') {
+-  let notification = document.getElementById('appNotification');
+-
+-  if (!notification) {
+-    notification = document.createElement('div');
+-    notification.id = 'appNotification';
+-
+-    Object.assign(notification.style, {
+-      position: 'fixed',
+-      top: '24px',
+-      right: '24px',
+-      zIndex: '99999',
+-      padding: '14px 20px',
+-      borderRadius: '8px',
+-      fontSize: '14px',
+-      fontWeight: '600',
+-      maxWidth: '400px',
+-      boxShadow: '0 8px 25px rgba(0, 0, 0, 0.2)',
+-      transition: 'opacity 0.3s ease',
+-    });
+-
+-    document.body.appendChild(notification);
+-  }
+-
+-  notification.textContent = message;
+-
+-  notification.style.background = type === 'error' ? '#fee2e2' : '#dcfce7';
+-  notification.style.color = type === 'error' ? '#991b1b' : '#166534';
+-  notification.style.opacity = '1';
+-
+-  clearTimeout(notification._timeout);
+-
+-  notification._timeout = setTimeout(() => {
+-    notification.style.opacity = '0';
+-  }, 4000);
+-}
+-
+ // ---------------------------------------------------------------
+ // Transform: raw Wazuh vulnerabilities_by_agent buckets
+ // (one entry per paire CVE x agent) -> vue par CVE + vue par agent
+@@ -288,6 +242,7 @@ function renderPeriod() {
+   }
+ }
+ 
++
+ function renderStats() {
+   const sevCounts = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+   allCves.forEach((c) => { if (sevCounts[c.severity] !== undefined) sevCounts[c.severity]++; });
+@@ -482,7 +437,7 @@ function initRemediationCarousel() {
+   // DÉFILEMENT AUTOMATIQUE
+   // ============================
+ 
+-  const AUTO_PLAY_DELAY = 3000;
++  const AUTO_PLAY_DELAY = 3000; // 4 secondes
+ 
+   carouselAutoPlayInterval = setInterval(() => {
+     const cardsPerView = getCardsPerView();
+@@ -507,14 +462,6 @@ function renderTab() {
+   filterRows();
+ }
+ 
+-function getProgressClass(percentage) {
+-  if (percentage >= 100) return 'progress-complete';
+-  if (percentage >= 75) return 'progress-high';
+-  if (percentage >= 50) return 'progress-medium';
+-  if (percentage >= 25) return 'progress-low';
+-  return 'progress-critical';
+-}
+-
+ // ---------------- Vue par CVE ----------------
+ function renderCveTable() {
+   const thead = document.getElementById('thead');
+@@ -525,7 +472,6 @@ function renderCveTable() {
+       <th data-key="cvss">CVSS</th>
+       <th>Paquet(s)</th>
+       <th data-key="agentCount">Agents touchés</th>
+-      <th data-key="progression">Progression de traitement</th>
+     </tr>`;
+   thead.querySelectorAll('th[data-key]').forEach((th) => {
+     th.addEventListener('click', () => {
+@@ -537,26 +483,10 @@ function renderCveTable() {
+   });
+ 
+   const sorted = [...allCves].sort((a, b) => {
+-    let av;
+-    let bv;
+-
+-    if (cveSort.key === 'progression') {
+-      av = getCveProgress(a).percentage;
+-      bv = getCveProgress(b).percentage;
+-    } else {
+-      av = a[cveSort.key];
+-      bv = b[cveSort.key];
+-    }
+-
+-    if (cveSort.key === 'severity') {
+-      av = SEVERITY_WEIGHT[av] ?? 0;
+-      bv = SEVERITY_WEIGHT[bv] ?? 0;
+-    }
+-
+-    if (typeof av === 'string') {
+-      return av.localeCompare(bv) * cveSort.dir;
+-    }
+-
++    let av = a[cveSort.key];
++    let bv = b[cveSort.key];
++    if (cveSort.key === 'severity') { av = SEVERITY_WEIGHT[av] ?? 0; bv = SEVERITY_WEIGHT[bv] ?? 0; }
++    if (typeof av === 'string') return av.localeCompare(bv) * cveSort.dir;
+     return ((av ?? 0) - (bv ?? 0)) * cveSort.dir;
+   });
+ 
+@@ -565,60 +495,19 @@ function renderCveTable() {
+     .map((c) => {
+       const color = SEVERITY_COLOR[c.severity] || 'var(--unknown)';
+       const pkgPreview = c.packages.slice(0, 2).map(escapeHtml).join(', ') + (c.packages.length > 2 ? `, +${c.packages.length - 2}` : '');
+-      const progress = getCveProgress(c);
+-      const progressClass = getProgressClass(progress.percentage);
+       const agentChips =
+         c.agents.slice(0, previewCount).map((a) => `<span class="asset" data-cve="${escapeHtml(c.cve)}">${escapeHtml(a.name)}</span>`).join('') +
+         (c.agents.length > previewCount ? `<span class="asset more" data-cve="${escapeHtml(c.cve)}">+${c.agents.length - previewCount}</span>` : '');
+       const searchText = [c.cve, c.title, ...c.packages, ...c.agents.map((a) => a.name)].join(' ').toLowerCase();
+ 
+       return `
+-<tr
+-  data-sev="${escapeHtml(c.severity)}"
+-  data-packages="${escapeHtml(c.packages.join('|'))}"
+-  data-text="${escapeHtml(searchText)}"
+->
+-  <td>
+-    <span class="badge" style="background:${color}">
+-      ${escapeHtml(c.severity)}
+-    </span>
+-  </td>
+-
+-  <td>
+-    ${escapeHtml(c.cve)}
+-    <span class="sub">${escapeHtml(c.title)}</span>
+-  </td>
+-
+-  <td>
+-    ${c.cvss != null ? c.cvss.toFixed(1) : '—'}
+-  </td>
+-
+-  <td>
+-    ${pkgPreview || '—'}
+-  </td>
+-
+-  <td>
+-    <div class="assets">
+-      ${agentChips || '<span class="asset">—</span>'}
+-    </div>
+-  </td>
+-
+-  <td>
+-  <div class="cve-progress">
+-    <div class="cve-progress-info">
+-      <span>${progress.validated}/${progress.total} agents</span>
+-      <strong>${progress.percentage}%</strong>
+-    </div>
+-
+-    <div class="cve-progress-bar">
+-      <div
+-        class="cve-progress-fill ${progressClass}"
+-        style="width: ${progress.percentage}%"
+-      ></div>
+-    </div>
+-  </div>
+-</td>
+-</tr>`;
++      <tr data-sev="${escapeHtml(c.severity)}" data-text="${escapeHtml(searchText)}">
++        <td><span class="badge" style="background:${color}">${escapeHtml(c.severity)}</span></td>
++        <td>${escapeHtml(c.cve)}<span class="sub">${escapeHtml(c.title)}</span></td>
++        <td>${c.cvss != null ? c.cvss.toFixed(1) : '—'}</td>
++        <td>${pkgPreview || '—'}</td>
++        <td><div class="assets">${agentChips || '<span class="asset">—</span>'}</div></td>
++      </tr>`;
+     })
+     .join('');
+ 
+@@ -627,86 +516,33 @@ function renderCveTable() {
+   });
+ }
+ 
+-function openCveModal(cveId) {
+-  const c = allCves.find((x) => x.cve === cveId);
+-  if (!c) return;
+-  document.getElementById('modalTitle').textContent = `${c.cve} — ${c.agents.length} agents`;
+-  document.getElementById('modalSearch').value = '';
+-  document.getElementById('modalStatusFilter').value = '';
+-  renderCveModalBody(c);
+-  document.getElementById('vulnModal').classList.add('open');
+-}
++// Statut courant d'un couple (cve, agentName), depuis les données API
++// (GET /api/vulnerabilities), remplace l'ancien localStorage.
++function getStatus(cve, agentName) {
++  const row = vulnStatusMap.get(`${cve}|${agentName}`);
+ 
+-// ---------------------------------------------------------------
+-// Commentaires : construit la liste "traitement"/"validation" à partir
+-// d'une ligne de suivi renvoyée par GET /api/vulnerabilities.
+-// NOTE: nécessite que l'API renvoie aussi treated_comment / validated_comment
+-// (voir patch backend). Si ces champs ne sont pas encore exposés, on affiche
+-// un texte de repli plutôt que de ne rien montrer.
+-// ---------------------------------------------------------------
+-function buildCommentItems(trackingRow) {
+-  const items = [];
+-  if (trackingRow?.treated_by) {
+-    items.push({
+-      type: 'traitement',
+-      label: 'Traitement',
+-      author: trackingRow.treated_by,
+-      text: trackingRow.treatment_comment,
+-      date: trackingRow.treated_at,
+-    });
+-  }
+-  if (trackingRow?.validated_by) {
+-    items.push({
+-      type: 'validation',
+-      label: 'Validation',
+-      author: trackingRow.validated_by,
+-      text: trackingRow.validation_comment,
+-      date: trackingRow.validated_at,
+-    });
++  if (!row || !row.status) {
++    return 'nouveau';
+   }
+-  return items;
+-}
+ 
+-function renderComments(trackingRow) {
+-  const items = buildCommentItems(trackingRow);
+-  if (!items.length) return '';
+-  return `
+-    <div class="modal-row-comments">
+-      ${items
+-        .map(
+-          (it) => `
+-        <div class="comment-item comment-${it.type}">
+-          <span class="comment-author">${escapeHtml(it.author)} — ${it.label}</span>
+-          <span class="comment-text">${escapeHtml(it.text || '(pas de commentaire)')}</span>
+-          ${it.date ? `<span class="comment-date">${new Date(it.date).toLocaleString('fr-FR')}</span>` : ''}
+-        </div>`
+-        )
+-        .join('')}
+-    </div>`;
+-}
++  const status = row.status.toLowerCase();
+ 
+-function getCveProgress(cve) {
+-  const totalAgents = cve.agents.length;
++  return STATUS_LABELS[status] ? status : 'nouveau';
++}
+ 
+-  if (totalAgents === 0) {
+-    return {
+-      validated: 0,
+-      total: 0,
+-      percentage: 0
+-    };
+-  }
++async function openCveModal(cveId) {
++  const c = allCves.find((x) => x.cve === cveId);
++  if (!c) return;
+ 
+-  const validated = cve.agents.filter((agent) => {
+-    return getStatus(cve.cve, agent.name) === 'valide';
+-  }).length;
++  document.getElementById('modalTitle').textContent = `${c.cve} — ${c.agents.length} agents`;
++  document.getElementById('modalSearch').value = '';
++  document.getElementById('modalStatusFilter').value = '';
++  document.getElementById('modalBody').innerHTML = '<div class="modal-loading">Chargement des statuts…</div>';
++  document.getElementById('vulnModal').classList.add('open');
+ 
+-  const percentage = Math.round((validated / totalAgents) * 100);
++  await fetchVulnStatusesForCve(cveId);
+ 
+-  return {
+-    validated,
+-    total: totalAgents,
+-    percentage
+-  };
++  renderCveModalBody(c);
+ }
+ 
+ function renderCveModalBody(c) {
+@@ -715,9 +551,29 @@ function renderCveModalBody(c) {
+ 
+   document.getElementById('modalBody').innerHTML = c.agents
+     .map((a) => {
++      const status = getStatus(c.cve, a.name);
+       const trackingRow = vulnStatusMap.get(`${c.cve}|${a.name}`);
+-      const status = normalizeStatus(trackingRow?.status);
+-      const searchText = `${a.name}`.toLowerCase();
++      const comments = getComments(c.cve, a.name);
++      const searchText = `${a.name} ${a.id}`.toLowerCase();
++
++      const commentsHtml = comments.length
++        ? `<div class="modal-row-comments">
++            ${comments.map((cm) => `
++              <div class="comment-item comment-${cm.type}">
++                <span class="comment-author">${escapeHtml(cm.author)}</span>
++                <span class="comment-text">${escapeHtml(cm.text)}</span>
++                <span class="comment-date">${new Date(cm.createdAt).toLocaleString('fr-FR')}</span>
++              </div>`).join('')}
++          </div>`
++        : '';
++
++      // Petit résumé de qui a traité / validé, tel que renvoyé par l'API
++      const trackingHtml = trackingRow
++        ? `<div class="modal-row-tracking">
++            ${trackingRow.treated_by ? `<span>Traité par ${escapeHtml(trackingRow.treated_by)}</span>` : ''}
++            ${trackingRow.validated_by ? `<span>Validé par ${escapeHtml(trackingRow.validated_by)}</span>` : ''}
++          </div>`
++        : '';
+ 
+       return `
+       <div class="modal-row-detailed" data-status="${status}" data-search="${escapeHtml(searchText)}">
+@@ -727,7 +583,8 @@ function renderCveModalBody(c) {
+           <span class="status-badge status-${status}">${STATUS_LABELS[status]}</span>
+         </div>
+ 
+-        ${renderComments(trackingRow)}
++        ${trackingHtml}
++        ${commentsHtml}
+ 
+         <div class="modal-row-actions">
+           <button
+@@ -751,7 +608,7 @@ function renderCveModalBody(c) {
+         </div>
+ 
+         <div class="modal-row-comment-form" data-form="valide" hidden>
+-          <textarea placeholder="Réponse de validation (optionnel)..."></textarea>
++          <textarea placeholder="Réponse de validation (optionnel, non transmise à l'API)..."></textarea>
+           <div class="form-actions">
+             <button class="btn-ghost" data-cancel-form>Annuler</button>
+             <button class="btn-primary" data-submit-form="valide" data-cve="${escapeHtml(c.cve)}" data-agent="${escapeHtml(a.name)}">Valider</button>
+@@ -806,7 +663,6 @@ function wireCveModalRowEvents(c) {
+         textarea.focus();
+         return; // commentaire obligatoire pour "Marquer traité"
+       }
+-      textarea.classList.remove('input-error');
+ 
+       btn.disabled = true;
+       const originalLabel = btn.textContent;
+@@ -815,14 +671,75 @@ function wireCveModalRowEvents(c) {
+       try {
+         if (action === 'traite') {
+           await treatVulnerabilityApi(cve, agent, text);
++
++          addComment(cve, agent, {
++            type: 'traitement',
++            text: text || '(sans commentaire)',
++          });
++
++          // API OK → récupérer le statut depuis la BDD (scopé à cette CVE)
++          await fetchVulnStatusesForCve(cve, true);
++          renderCveModalBody(c);
++
+         } else {
+-          await validateVulnerabilityApi(cve, agent, text || null);
++          try {
++            await validateVulnerabilityApi(cve, agent);
++
++            // API /validate OK
++            if (text) {
++              addComment(cve, agent, {
++                type: 'validation',
++                text,
++              });
++            }
++
++            // Récupérer le nouveau statut depuis la BDD (scopé à cette CVE)
++            await fetchVulnStatusesForCve(cve, true);
++            renderCveModalBody(c);
++
++          } catch (err) {
++            console.error('Validation refusée :', err);
++
++            // L'API /validate a échoué :
++            // Wazuh détecte encore la vulnérabilité.
++            const key = `${cve}|${agent}`;
++
++            const existingRow = vulnStatusMap.get(key);
++
++            if (existingRow) {
++              existingRow.status = 'rejete';
++            } else {
++              vulnStatusMap.set(key, {
++                cve_id: cve,
++                agent_name: agent,
++                status: 'rejete',
++                treated_by: null,
++                treated_at: null,
++                validated_by: null,
++                validated_at: null,
++              });
++            }
++
++            // Afficher immédiatement "Rejeté"
++            renderCveModalBody(c);
++
++            // Notification
++            showNotification(
++              'Wazuh détecte encore cette vulnérabilité',
++              'error'
++            );
++          }
+         }
+-        await fetchVulnStatuses();
+-        renderCveModalBody(c);
+-        showNotification('Statut mis à jour avec succès', 'success');
++
+       } catch (err) {
+-        showNotification("Erreur lors de l'enregistrement : " + (err.message || err), 'error');
++        console.error('Échec de l’action :', err);
++
++        showNotification(
++          `Échec de l'action : ${err.message}`,
++          'error'
++        );
++
++      } finally {
+         btn.disabled = false;
+         btn.textContent = originalLabel;
+       }
+@@ -830,6 +747,51 @@ function wireCveModalRowEvents(c) {
+   });
+ }
+ 
++function showNotification(message, type = 'error') {
++  let notification = document.getElementById('appNotification');
++
++  if (!notification) {
++    notification = document.createElement('div');
++    notification.id = 'appNotification';
++
++    Object.assign(notification.style, {
++      position: 'fixed',
++      top: '24px',
++      right: '24px',
++      zIndex: '99999',
++      padding: '14px 20px',
++      borderRadius: '8px',
++      fontSize: '14px',
++      fontWeight: '600',
++      maxWidth: '400px',
++      boxShadow: '0 8px 25px rgba(0, 0, 0, 0.2)',
++      transition: 'opacity 0.3s ease',
++    });
++
++    document.body.appendChild(notification);
++  }
++
++  notification.textContent = message;
++
++  notification.style.background =
++    type === 'error'
++      ? '#fee2e2'
++      : '#dcfce7';
++
++  notification.style.color =
++    type === 'error'
++      ? '#991b1b'
++      : '#166534';
++
++  notification.style.opacity = '1';
++
++  clearTimeout(notification._timeout);
++
++  notification._timeout = setTimeout(() => {
++    notification.style.opacity = '0';
++  }, 4000);
++}
++
+ function filterModalRows() {
+   const q = (document.getElementById('modalSearch')?.value || '').toLowerCase();
+   const statusFilter = document.getElementById('modalStatusFilter')?.value || '';
+@@ -896,14 +858,7 @@ function openAgentModal(agentId) {
+   if (!a) return;
+   document.getElementById('modalTitle').textContent = `${a.name} — ${a.cves.length} CVE`;
+   document.getElementById('modalBody').innerHTML = a.cves
+-    .map((c) => {
+-      const status = normalizeStatus(getStatus(c.cve, a.name));
+-      return `<div class="modal-row">
+-        <span class="h">${escapeHtml(c.cve)}</span>
+-        <span class="c">${escapeHtml(c.severity)}</span>
+-        <span class="status-badge status-${status}">${STATUS_LABELS[status]}</span>
+-      </div>`;
+-    })
++    .map((c) => `<div class="modal-row"><span class="h">${escapeHtml(c.cve)}</span><span class="c">${escapeHtml(c.severity)}</span></div>`)
+     .join('');
+   document.getElementById('vulnModal').classList.add('open');
+ }
+@@ -912,40 +867,19 @@ function openAgentModal(agentId) {
+ function filterRows() {
+   const q = document.getElementById('search').value.toLowerCase();
+   const sev = document.getElementById('sevFilter').value;
+-  const pkg = document.getElementById('paqFilter').value;
+-
+   document.querySelectorAll('#table tbody tr').forEach((row) => {
+     const text = row.dataset.text || '';
+-    const rowPackages = row.dataset.packages ? row.dataset.packages.split('|') : [];
+-
+-    const matchesQuery = !q || text.includes(q);
+-    const matchesSev = !sev || row.dataset.sev === sev;
+-    // vue "Par agent" : pas de data-packages -> le filtre paquet est ignoré, pas bloquant
+-    const matchesPkg = !pkg || currentTab !== 'cve' || rowPackages.includes(pkg);
+-
+-    row.classList.toggle('row-hidden', !(matchesQuery && matchesSev && matchesPkg));
++    const match = (!q || text.includes(q)) && (!sev || row.dataset.sev === sev);
++    row.classList.toggle('row-hidden', !match);
+   });
+ }
+ 
+-function populatePackageFilter() {
+-  const pkgSet = new Set();
+-  allCves.forEach((c) => c.packages.forEach((p) => pkgSet.add(p)));
+-  const select = document.getElementById('paqFilter');
+-  if (!select) return;
+-  const current = select.value; // préserve la sélection si on recharge
+-  select.innerHTML =
+-    '<option value="">Tous paquets</option>' +
+-    Array.from(pkgSet).sort().map((p) => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+-  select.value = current;
+-}
+-
+ // ---------------------------------------------------------------
+ // Wire up event listeners
+ // ---------------------------------------------------------------
+ document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => { currentTab = t.dataset.tab; renderTab(); }));
+ document.getElementById('search').addEventListener('input', filterRows);
+ document.getElementById('sevFilter').addEventListener('change', filterRows);
+-document.getElementById('paqFilter').addEventListener('change', filterRows);
+ document.getElementById('reloadBtn').addEventListener('click', loadData);
+ document.getElementById('vulnModal').addEventListener('click', (e) => {
+   if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
