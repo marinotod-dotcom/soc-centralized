@@ -632,25 +632,7 @@ function wireCveModalRowEvents(c) {
           } catch (err) {
             console.error('Validation refusée :', err);
 
-            const key = `${cve}|${agent}`;
-            const existingRow = vulnStatusMap.get(key);
-
-            if (existingRow) {
-              existingRow.status = 'rejete';
-            } else {
-              vulnStatusMap.set(key, {
-                cve_id: cve,
-                agent_name: agent,
-                status: 'rejete',
-                treated_by: null,
-                treated_at: null,
-                treatment_comment: [],
-                validated_by: null,
-                validated_at: null,
-                validation_comment: [],
-              });
-            }
-
+            await fetchVulnStatusesForCve(cve, true);
             renderCveModalBody(c);
 
             showNotification(
