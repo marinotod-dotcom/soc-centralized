@@ -161,7 +161,7 @@ function buildCommentItems(trackingRow) {
       date: trackingRow.validated_at,
     });
   });
-  return items;
+  return items.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
 }
 
 function renderCommentsFromDb(trackingRow) {
