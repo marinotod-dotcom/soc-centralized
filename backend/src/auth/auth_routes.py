@@ -27,7 +27,13 @@ def login(response: Response, username: str = Form(...), password: str = Form(..
 
 @router.post("/logout")
 def logout(response: Response):
-    response.delete_cookie(COOKIE_NAME)
+    response.delete_cookie(
+        key=COOKIE_NAME,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+    )
+    logger.info("Deconnexion effectuee")
     return {"detail": "Deconnecte"}
 
 @router.get("/verify")
