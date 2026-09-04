@@ -11,6 +11,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from src.services.sla_analytics_service import SlaAnalyticsService
 from src.models.schemas.sla_analytics import VulnDashboardResponse
 from src.models.db.vulnerability_tracking import VulnerabilityTracking
+from src.models.enums.vulnerability_status_enum import VulnerabilityStatus
 from src.services.vulnerability_tracking_service import VulnerabilityTrackingService
 
 logger = logging.getLogger("uvicorn")
