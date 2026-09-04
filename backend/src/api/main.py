@@ -146,6 +146,10 @@ def validate_vulnerability(
         )
     except ValueError as e:
         raise HTTPException(404, str(e))
+
+    if new_status == VulnerabilityStatus.REJETE:
+        raise HTTPException(409, "CVE toujours détectée par Wazuh — validation refusée.")
+
     return {"status": new_status.value}
 
 @app.get("/api/sla/dashboard", response_model=VulnDashboardResponse)
