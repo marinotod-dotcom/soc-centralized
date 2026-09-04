@@ -1,5 +1,4 @@
 import '../shared/theme.css';
-import { getComments, addComment } from '../shared/vulnComments.js';
 import { initThemeToggle } from '../shared/theme-toggle.js';
 import { highlightActiveNav } from '../shared/nav.js';
 import { escapeHtml } from '../shared/dom.js';
@@ -136,6 +135,51 @@ function getStatus(cve, agentName) {
   }
   const status = row.status.toLowerCase();
   return STATUS_LABELS[status] ? status : 'nouveau';
+}
+
+// ---------------------------------------------------------------
+// Commentaires : construits directement depuis les colonnes JSONB
+// treatment_comment / validation_comment renvoyées par
+// GET /api/vulnerabilities/by-cve/{cve_id} — plus de localStorage,
+// la base est la seule source de vérité, partagée entre tous les rôles.
+// ---------------------------------------------------------------
+function buildCommentItems(trackingRow) {
+  const items = [];
+  (trackingRow?.treatment_comment || []).forEach((text) => {
+    items.push({
+      type: 'traitement',
+      author: trackingRow.treated_by,
+      text,
+      date: trackingRow.treated_at,
+    });
+  });
+  (trackingRow?.validation_comment || []).forEach((text) => {
+    items.push({
+      type: 'validation',
+      author: trackingRow.validated_by,
+      text,
+      date: trackingRow.validated_at,
+    });
+  });
+  return items;
+}
+
+function renderCommentsFromDb(trackingRow) {
+  const items = buildCommentItems(trackingRow);
+  if (!items.length) return '';
+  return `
+    <div class="modal-row-comments">
+      ${items
+        .map(
+          (it) => `
+        <div class="comment-item comment-${it.type}">
+          <span class="comment-author">${escapeHtml(it.author || '—')}</span>
+          <span class="comment-text">${escapeHtml(it.text)}</span>
+          ${it.date ? `<span class="comment-date">${new Date(it.date).toLocaleString('fr-FR')}</span>` : ''}
+        </div>`
+        )
+        .join('')}
+    </div>`;
 }
 
 function transformBuckets(buckets) {
@@ -470,19 +514,7 @@ function renderCveModalBody(c) {
     .map((a) => {
       const status = getStatus(c.cve, a.name);
       const trackingRow = vulnStatusMap.get(`${c.cve}|${a.name}`);
-      const comments = getComments(c.cve, a.name);
       const searchText = `${a.name} ${a.id}`.toLowerCase();
-
-      const commentsHtml = comments.length
-        ? `<div class="modal-row-comments">
-            ${comments.map((cm) => `
-              <div class="comment-item comment-${cm.type}">
-                <span class="comment-author">${escapeHtml(cm.author)}</span>
-                <span class="comment-text">${escapeHtml(cm.text)}</span>
-                <span class="comment-date">${new Date(cm.createdAt).toLocaleString('fr-FR')}</span>
-              </div>`).join('')}
-          </div>`
-        : '';
 
       const trackingHtml = trackingRow
         ? `<div class="modal-row-tracking">
@@ -500,7 +532,7 @@ function renderCveModalBody(c) {
         </div>
 
         ${trackingHtml}
-        ${commentsHtml}
+        ${renderCommentsFromDb(trackingRow)}
 
         <div class="modal-row-actions">
           <button
@@ -524,7 +556,7 @@ function renderCveModalBody(c) {
         </div>
 
         <div class="modal-row-comment-form" data-form="valide" hidden>
-          <textarea placeholder="Réponse de validation (optionnel, non transmise à l'API)..."></textarea>
+          <textarea placeholder="Réponse de validation (optionnel)..."></textarea>
           <div class="form-actions">
             <button class="btn-ghost" data-cancel-form>Annuler</button>
             <button class="btn-primary" data-submit-form="valide" data-cve="${escapeHtml(c.cve)}" data-agent="${escapeHtml(a.name)}">Valider</button>
@@ -577,6 +609,7 @@ function wireCveModalRowEvents(c) {
         textarea.focus();
         return;
       }
+      textarea.classList.remove('input-error');
 
       btn.disabled = true;
       const originalLabel = btn.textContent;
@@ -586,24 +619,12 @@ function wireCveModalRowEvents(c) {
         if (action === 'traite') {
           await treatVulnerabilityApi(cve, agent, text);
 
-          addComment(cve, agent, {
-            type: 'traitement',
-            text: text || '(sans commentaire)',
-          });
-
           await fetchVulnStatusesForCve(cve, true);
           renderCveModalBody(c);
 
         } else {
           try {
-            await validateVulnerabilityApi(cve, agent);
-
-            if (text) {
-              addComment(cve, agent, {
-                type: 'validation',
-                text,
-              });
-            }
+            await validateVulnerabilityApi(cve, agent, text || null);
 
             await fetchVulnStatusesForCve(cve, true);
             renderCveModalBody(c);
@@ -623,8 +644,10 @@ function wireCveModalRowEvents(c) {
                 status: 'rejete',
                 treated_by: null,
                 treated_at: null,
+                treatment_comment: [],
                 validated_by: null,
                 validated_at: null,
+                validation_comment: [],
               });
             }
 
