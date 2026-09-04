@@ -93,7 +93,7 @@ async function treatVulnerabilityApi(cveId, agentName, comment) {
   return res.json();
 }
 
-async function validateVulnerabilityApi(cveId, agentName) {
+async function validateVulnerabilityApi(cveId, agentName, comment) {
   const url =
     `/api/vulnerabilities/` +
     `${encodeURIComponent(cveId)}/` +
@@ -102,6 +102,8 @@ async function validateVulnerabilityApi(cveId, agentName) {
   const res = await fetch(url, {
     method: 'POST',
     credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ comment: comment || null }),
   });
 
   if (!res.ok) {
