@@ -79,6 +79,8 @@ services:
       - ./backend/config:/app/config
       - ./backend/main.py:/app/main.py
       - ./logs:/app/logs
+      - ./backend/static:/app/static
+      - ./backend/templates:/app/templates
     depends_on:
       postgres:
         condition: service_healthy
