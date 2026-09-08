@@ -10,7 +10,6 @@ from src.decorador.resilicence_decorador import failure_registry
 from src.pipelines import (
     run_kpi_report_pipeline,
     run_action_plan_pipeline,
-    run_action_plan_daily_pipeline,
     run_coverage_pipeline,
 )
 
@@ -31,9 +30,6 @@ def main() -> None:
         ),
         "action_plan": lambda: run_action_plan_pipeline(
             date_from, date_to, indexer, BASE_DIR
-        ),
-        "action_plan_daily": lambda: run_action_plan_daily_pipeline(
-            indexer, BASE_DIR
         ),
         "coverage": lambda: run_coverage_pipeline(
             date_to, manager, BASE_DIR, older_than=older_than, reference_fleet=reference_fleet
