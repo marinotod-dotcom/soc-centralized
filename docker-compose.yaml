@@ -80,6 +80,8 @@ services:
       - ./backend/main.py:/app/main.py
       - ./backend/templates:/app/templates
       - ./logs:/app/logs
+      - ./backend/static:/app/static
+      - ./backend/templates:/app/templates
     depends_on:
       postgres:
         condition: service_healthy
