@@ -13,9 +13,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.decorador.resilicence_decorador import failure_registry
 from src.routes.daily_action_plan_routes import router as daily_action_plan_router
 
-app.include_router(auth_router)
-app.include_router(daily_action_plan_router)
-
 sys.stdout.reconfigure(encoding="utf-8")
 load_dotenv()
 
