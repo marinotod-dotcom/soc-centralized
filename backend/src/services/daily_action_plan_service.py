@@ -3,8 +3,7 @@ import logging
 import os
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Union
-
+from typing import Union, Optional
 from dotenv import load_dotenv
 from src.clients.wazuh_indexer import WazuhIndexerClient
 from src.collectors.daily_action_plan import DailyActionPlanCollector
