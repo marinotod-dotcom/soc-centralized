@@ -1,5 +1,20 @@
 import argparse
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from typing import Optional
+
+
+@dataclass
+class ParsedArgs:
+    date_from: datetime
+    date_to: datetime
+    pretty: bool
+    only: str
+    older_than: str
+    reference_fleet: Optional[int]
+    collection_date: date            # jour ciblé pour daily_action_plan
+    index_override: Optional[str]    # index unique forcé (bypass date_utils)
+    local: bool                      # test local : pas de publish MinIO ni de load DB
 
 
 def get_week_range(week_number: int, year: int) -> tuple[datetime, datetime]:
@@ -11,7 +26,7 @@ def get_week_range(week_number: int, year: int) -> tuple[datetime, datetime]:
     )
 
 
-def parse_args() -> tuple[datetime, datetime, bool, str, str, int | None]:
+def parse_args() -> ParsedArgs:
     parser = argparse.ArgumentParser(
         description="Collecte les KPIs Wazuh sur une semaine ISO."
     )
@@ -30,7 +45,7 @@ def parse_args() -> tuple[datetime, datetime, bool, str, str, int | None]:
 
     parser.add_argument(
         "--only",
-        choices=["all", "kpi_report", "action_plan", "coverage"],
+        choices=["all", "kpi_report", "action_plan", "daily_action_plan", "coverage"],
         default="all",
         help="Exécute uniquement un pipeline (par défaut : tous).",
     )
@@ -56,6 +71,38 @@ def parse_args() -> tuple[datetime, datetime, bool, str, str, int | None]:
         ),
     )
 
+    parser.add_argument(
+        "--day",
+        dest="day",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help=(
+            "Jour de collecte pour daily_action_plan (test local d'un jour précis). "
+            "Par défaut : aujourd'hui (résolution samedi+dimanche automatique si lundi)."
+        ),
+    )
+
+    parser.add_argument(
+        "--index",
+        dest="index_override",
+        default=None,
+        metavar="NOM_INDEX",
+        help=(
+            "Force un index Wazuh précis pour daily_action_plan "
+            "(ex: wazuh-alerts-4.x-2026.09.06), bypass la résolution automatique "
+            "par date. Pratique pour tester un seul index en local."
+        ),
+    )
+
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help=(
+            "Mode test local pour daily_action_plan : écrit le JSON sur disque "
+            "(./local_output/) sans publier sur MinIO ni charger en base."
+        ),
+    )
+
     args = parser.parse_args()
 
     now = datetime.now()
@@ -72,4 +119,22 @@ def parse_args() -> tuple[datetime, datetime, bool, str, str, int | None]:
 
     date_from, date_to = get_week_range(week_number, year)
 
-    return date_from, date_to, args.pretty, args.only, args.older_than, args.reference_fleet
+    if args.day:
+        try:
+            collection_date = datetime.strptime(args.day, "%Y-%m-%d").date()
+        except ValueError:
+            parser.error(f"--day doit être au format YYYY-MM-DD (reçu : {args.day!r})")
+    else:
+        collection_date = date.today()
+
+    return ParsedArgs(
+        date_from=date_from,
+        date_to=date_to,
+        pretty=args.pretty,
+        only=args.only,
+        older_than=args.older_than,
+        reference_fleet=args.reference_fleet,
+        collection_date=collection_date,
+        index_override=args.index_override,
+        local=args.local,
+    )

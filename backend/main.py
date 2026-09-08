@@ -10,6 +10,7 @@ from src.decorador.resilicence_decorador import failure_registry
 from src.pipelines import (
     run_kpi_report_pipeline,
     run_action_plan_pipeline,
+    run_daily_action_plan_pipeline,
     run_coverage_pipeline,
 )
 
@@ -20,26 +21,34 @@ BASE_DIR = Path(__file__).resolve().parent
 
 
 def main() -> None:
-    date_from, date_to, pretty_print, only, older_than, reference_fleet = parse_args()
+    parsed = parse_args()
 
     indexer, manager = build_clients()
 
     all_pipelines = {
         "kpi_report": lambda: run_kpi_report_pipeline(
-            date_from, date_to, pretty_print, indexer, manager, BASE_DIR
+            parsed.date_from, parsed.date_to, parsed.pretty, indexer, manager, BASE_DIR
         ),
         "action_plan": lambda: run_action_plan_pipeline(
-            date_from, date_to, indexer, BASE_DIR
+            parsed.date_from, parsed.date_to, indexer, BASE_DIR
+        ),
+        "daily_action_plan": lambda: run_daily_action_plan_pipeline(
+            indexer,
+            BASE_DIR,
+            collection_date=parsed.collection_date,
+            index_override=parsed.index_override,
+            skip_publish=parsed.local,
         ),
         "coverage": lambda: run_coverage_pipeline(
-            date_to, manager, BASE_DIR, older_than=older_than, reference_fleet=reference_fleet
+            parsed.date_to, manager, BASE_DIR,
+            older_than=parsed.older_than, reference_fleet=parsed.reference_fleet
         ),
     }
 
     pipelines = (
         all_pipelines
-        if only == "all"
-        else {only: all_pipelines[only]}
+        if parsed.only == "all"
+        else {parsed.only: all_pipelines[parsed.only]}
     )
 
     failure_registry.reset()

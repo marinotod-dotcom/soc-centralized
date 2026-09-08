@@ -1,5 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
+DEFAULT_DAILY_INDEX_PATTERN = "wazuh-alerts-4.x-{date}"
 
 def get_week_range(reference_date: datetime = None) -> tuple[datetime, datetime]:
     """
@@ -41,3 +42,37 @@ def get_week_label(date: datetime) -> str:
     week = date.isocalendar()[1]
     year = date.year
     return f"S{week:02d}_{year}"
+
+def get_collection_indices(
+    collection_date: date,
+    index_pattern: str = DEFAULT_DAILY_INDEX_PATTERN,
+) -> list[str]:
+    """
+    Détermine les index Wazuh à interroger pour une date de collecte donnée.
+
+    Règle :
+      - Lundi     -> index de samedi ET dimanche (pas de collecte le week-end)
+      - Mardi     -> index de lundi
+      - Mercredi  -> index de mardi
+      - Jeudi     -> index de mercredi
+      - Vendredi  -> index de jeudi
+    """
+    weekday = collection_date.weekday()  # lundi = 0
+
+    if weekday == 0:  # lundi
+        target_dates = [
+            collection_date - timedelta(days=2),  # samedi
+            collection_date - timedelta(days=1),  # dimanche
+        ]
+    else:
+        target_dates = [collection_date - timedelta(days=1)]
+
+    return [
+        index_pattern.format(date=d.strftime("%Y.%m.%d"))
+        for d in target_dates
+    ]
+
+
+def get_day_label(collection_date: date) -> str:
+    """Label journalier pour nommage des fichiers/archives, ex: 2026-09-08."""
+    return collection_date.strftime("%Y-%m-%d")

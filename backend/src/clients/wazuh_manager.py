@@ -17,7 +17,7 @@ class WazuhManagerClient:
         host: str,
         username: str,
         password: str,
-        timeout: int = 60,
+        timeout: int = 180,
         verify_ssl: bool = False,
     ):
         self.host = host.rstrip("/")
