@@ -78,6 +78,7 @@ services:
       - ./backend/src:/app/src
       - ./backend/config:/app/config
       - ./backend/main.py:/app/main.py
+      - ./backend/templates:/app/templates
       - ./logs:/app/logs
     depends_on:
       postgres:

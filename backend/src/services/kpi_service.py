@@ -1,5 +1,6 @@
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
 
 from src.collectors.cis import CisBenchmarkCollector
 from src.clients.wazuh_indexer import WazuhIndexerClient
@@ -9,6 +10,20 @@ from src.collectors.log import LogCollector
 from src.collectors.fim import FimCollector
 from src.collectors.malware import MalwareCollector
 from src.collectors.compliance import ComplianceCollector
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_dump(kpis: dict) -> dict:
+    result = {}
+    for key, kpi in kpis.items():
+        if kpi is None:
+            logger.warning("KPI '%s' manquant (échec de collecte) — exclu du rapport", key)
+            result[key] = None
+        else:
+            result[key] = kpi.model_dump()
+    return result
+
 
 class KPIService:
     def __init__(
@@ -33,7 +48,7 @@ class KPIService:
             "top10_vulnerable_machines": vuln.get_top10_vulnerable_machines(date_from, date_to),
             "top10_cve": vuln.get_top10_cve(date_from, date_to),
         }
-        return {key: kpi.model_dump() for key, kpi in kpis.items()}
+        return _safe_dump(kpis)
 
     def compute_log_kpis(self, date_from: datetime, date_to: datetime) -> dict:
         log = self._log_collector
@@ -42,7 +57,7 @@ class KPIService:
             "never_connected_agents": log.get_never_connected_agents(),
             "confirmed_incidents": log.get_confirmed_incidents(date_from, date_to),
         }
-        return {key: kpi.model_dump() for key, kpi in kpis.items()}
+        return _safe_dump(kpis)
 
     def compute_cis_kpis(self, date_from: datetime, date_to: datetime) -> dict:
         cis = self._cis_collector
@@ -51,50 +66,42 @@ class KPIService:
             "score_by_policy": cis.get_score_by_policy(date_from, date_to),
             "scanned_agent": cis.agents_scanned(date_from, date_to),
         }
-        return {key: kpi.model_dump() for key, kpi in kpis.items()}
+        return _safe_dump(kpis)
 
     def compute_fim_kpis(
         self,
         date_from: datetime,
         date_to: datetime,
-        soc_vp: int = 0,   
+        soc_vp: int = 0,
         soc_fp: int = 0,
     ) -> dict:
         fim = self._fim_collector
         kpis = {
-            "total_fim_events":     fim.get_total_event_count(date_from, date_to),
-            "event_type_breakdown": fim.get_event_type_breakdown(date_from, date_to),
-            "alert_level_breakdown":fim.get_alert_levels_breakdown(date_from, date_to),
-            "mode_coverage":        fim.get_mode_coverage(date_from, date_to),
+            "total_fim_events":      fim.get_total_event_count(date_from, date_to),
+            "event_type_breakdown":  fim.get_event_type_breakdown(date_from, date_to),
+            "alert_level_breakdown": fim.get_alert_levels_breakdown(date_from, date_to),
+            "mode_coverage":         fim.get_mode_coverage(date_from, date_to),
         }
-        return {key: kpi.model_dump() for key, kpi in kpis.items()}
+        return _safe_dump(kpis)
 
     def compute_malware_kpis(self, date_from: datetime, date_to: datetime) -> dict:
         malware = self._malware_collector
         kpis = {
-            "get_raw_event_count": malware.get_raw_event_count(date_from, date_to),
+            "get_raw_event_count":   malware.get_raw_event_count(date_from, date_to),
             "get_real_threat_count": malware.get_real_threat_count(date_from, date_to),
-            "get_unique_agents": malware.get_unique_agents(date_from, date_to),
-            "get_top10_agents": malware.get_top10_agents(date_from, date_to),
-            "get_top10_threats": malware.get_top10_threats(date_from, date_to),
+            "get_unique_agents":     malware.get_unique_agents(date_from, date_to),
+            "get_top10_agents":      malware.get_top10_agents(date_from, date_to),
+            "get_top10_threats":     malware.get_top10_threats(date_from, date_to),
         }
-        return {key: kpi.model_dump() for key, kpi in kpis.items()}
-    
-    def compute_compliance_kpis(self, date_from: datetime, date_to:datetime) -> dict:
-        compliance = self._compliance_collector
-        kpis = {
-            "get_hippa": compliance.hippa(date_from, date_to),
-            "get_rgpd": compliance.rgpd(date_from, date_to),
-        }
-        return {key: kpi.model_dump() for key, kpi in kpis.items()}
+        return _safe_dump(kpis)
 
-    def compute_compliance_kpis(self, date_from: datetime, date_to:datetime) -> dict:
+    def compute_compliance_kpis(self, date_from: datetime, date_to: datetime) -> dict:
         compliance = self._compliance_collector
         kpis = {
             "get_hipaa": compliance.hipaa(date_from, date_to),
             "get_rgpd": compliance.rgpd(date_from, date_to),
         }
-        return {key: kpi.model_dump() for key, kpi in kpis.items()}
+        return _safe_dump(kpis)
 
     def compute_all_kpis(self, date_from: datetime, date_to: datetime) -> dict:
         tasks = {
@@ -103,18 +110,22 @@ class KPIService:
             "cis": self.compute_cis_kpis,
             "fim": self.compute_fim_kpis,
             "malware": self.compute_malware_kpis,
-	        "compliance": self.compute_compliance_kpis,
+            "compliance": self.compute_compliance_kpis,
         }
 
         results = {}
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
             futures = {
                 executor.submit(fn, date_from, date_to): domain
                 for domain, fn in tasks.items()
             }
             for future in as_completed(futures):
                 domain = futures[future]
-                results[domain] = future.result()
+                try:
+                    results[domain] = future.result()
+                except Exception:
+                    logger.exception("Domaine KPI '%s' a échoué intégralement", domain)
+                    results[domain] = None
 
         return results

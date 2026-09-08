@@ -20,7 +20,7 @@ class ActionPlanCollector:
     def _search(self, body: dict) -> dict:
         return self._indexer.search(self._index, body)
 
-    @safe_call(fallback=[], label="get_vulnerabilities_by_agent")
+    @safe_call(fallback=[], label="get_vulnerabilities_by_agent", critical=True)
     def get_vulnerabilities_by_agent(
         self,
         date_from: datetime,
