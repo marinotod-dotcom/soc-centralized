@@ -23,7 +23,6 @@ class DailyActionPlanService:
         self._index_pattern = index_pattern or os.getenv(
             "WAZUH_INDEXER_INDEX_PATTERN_DAILY", DEFAULT_DAILY_INDEX_PATTERN
         )
-
     def generate_data_json(
         self,
         collection_date: date,
@@ -38,10 +37,13 @@ class DailyActionPlanService:
             indices, page_size=page_size
         )
 
+        day_end = datetime.combine(collection_date, datetime.max.time()).replace(microsecond=0)
+
         payload = {
             "meta": {
                 "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "collection_date": day_label,
+                "date_to": day_end.strftime("%Y-%m-%dT%H:%M:%SZ"),  # compat VulnerabilityTrackingLoader
                 "source_indices": indices,
                 "total_buckets": len(buckets),
             },
@@ -60,4 +62,4 @@ class DailyActionPlanService:
             "data.json généré : %s (%d buckets, index=%s)",
             output_path, len(buckets), ",".join(indices),
         )
-        return
+        return output_path
