@@ -12,6 +12,7 @@ from src.services.sla_analytics_service import SlaAnalyticsService
 from src.models.schemas.sla_analytics import VulnDashboardResponse
 from src.models.db.vulnerability_tracking import VulnerabilityTracking
 from src.models.enums.vulnerability_status_enum import VulnerabilityStatus
+from src.routes.daily_action_plan_routes import router as daily_action_plan_router
 from src.services.vulnerability_tracking_service import VulnerabilityTrackingService
 
 logger = logging.getLogger("uvicorn")
@@ -19,6 +20,7 @@ load_dotenv()
 
 app = FastAPI(title="Vulnerability Tracking API")
 app.include_router(auth_router)
+app.include_router(daily_action_plan_router)
 
 indexer_client, _manager_client = build_clients()
 tracking_service = VulnerabilityTrackingService(wazuh_client=indexer_client)
