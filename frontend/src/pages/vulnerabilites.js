@@ -33,7 +33,7 @@ async function loadData() {
 
   try {
     const [res] = await Promise.all([
-      fetch('/data/action_plan/latest.json', {
+      fetch('/data/daily_action_plan/latest.json', {
         credentials: 'include',
       }),
       fetchCurrentUser(),
