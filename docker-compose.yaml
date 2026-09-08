@@ -54,12 +54,19 @@ services:
     container_name: wazuh-vuln-api
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --workers 4
     env_file: [.env]
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_DASHBOARD: dashboard-data
     volumes:
       - ./backend/src:/app/src
       - ./backend/config:/app/config
       - ./backend/alembic:/app/alembic
     depends_on:
       postgres:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks: [internal]
     restart: unless-stopped

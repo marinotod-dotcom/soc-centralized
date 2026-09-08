@@ -12,11 +12,29 @@ logger = logging.getLogger(__name__)
 
 
 def get_minio_client():
+    endpoint = os.environ.get("MINIO_ENDPOINT", "http://minio:9000")
+    access_key = os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("MINIO_ROOT_USER")
+    secret_key = os.environ.get("MINIO_SECRET_KEY") or os.environ.get("MINIO_ROOT_PASSWORD")
+
+    missing = [
+        name for name, value in [
+            ("MINIO_ACCESS_KEY ou MINIO_ROOT_USER", access_key),
+            ("MINIO_SECRET_KEY ou MINIO_ROOT_PASSWORD", secret_key),
+        ]
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            f"Configuration MinIO incomplète pour ce conteneur, variable(s) manquante(s) : "
+            f"{', '.join(missing)}. Vérifiez le bloc 'environment' de ce service dans "
+            f"docker-compose.yaml."
+        )
+
     return boto3.client(
         "s3",
-        endpoint_url=os.environ["MINIO_ENDPOINT"],
-        aws_access_key_id=os.environ["MINIO_ACCESS_KEY"],
-        aws_secret_access_key=os.environ["MINIO_SECRET_KEY"],
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
         config=Config(signature_version="s3v4"),
         region_name="us-east-1",
     )
