@@ -20,7 +20,17 @@ let currentUser = null;
 let vulnStatusMap = new Map();
 
 async function loadData() {
-  document.getElementById('subtitle').textContent = 'Chargement…';
+  const loadingState = document.getElementById('loadingState');
+  const subtitle = document.getElementById('subtitle');
+  const content = document.getElementById('content');
+  const emptyState = document.getElementById('emptyState');
+
+  loadingState.style.display = 'flex';
+  subtitle.textContent = 'Chargement des vulnérabilités…';
+
+  content.style.display = 'none';
+  emptyState.style.display = 'none';
+
   try {
     const [res] = await Promise.all([
       fetch('/data/action_plan/latest.json', {
@@ -28,28 +38,47 @@ async function loadData() {
       }),
       fetchCurrentUser(),
     ]);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+    if (!res.ok) {
+      throw new Error('HTTP ' + res.status);
+    }
+
     const json = await res.json();
-    const buckets = json?.aggregations?.vulnerabilities_by_agent?.buckets;
-    if (!buckets) throw new Error('Structure inattendue : aggregations.vulnerabilities_by_agent.buckets introuvable');
+
+    const buckets =
+      json?.aggregations?.vulnerabilities_by_agent?.buckets;
+
+    if (!buckets) {
+      throw new Error(
+        'Structure inattendue : aggregations.vulnerabilities_by_agent.buckets introuvable'
+      );
+    }
 
     meta = json.meta || {};
+
     const { cves, agents } = transformBuckets(buckets);
+
     allCves = cves;
     allAgents = agents;
 
-    document.getElementById('emptyState').style.display = 'none';
-    document.getElementById('content').style.display = 'block';
+    emptyState.style.display = 'none';
+    content.style.display = 'block';
+
     renderStats();
     populatePackageFilter();
     renderPeriod();
     renderRemediations();
     renderTab();
+
   } catch (err) {
-    document.getElementById('emptyReason').textContent = err.message;
-    document.getElementById('emptyState').style.display = 'block';
-    document.getElementById('content').style.display = 'none';
-    document.getElementById('subtitle').textContent = 'data.json introuvable ou invalide';
+    emptyState.style.display = 'block';
+    content.style.display = 'none';
+
+    document.getElementById('emptyReason').textContent =
+      err.message;
+
+  } finally {
+    loadingState.style.display = 'none';
   }
 }
 
