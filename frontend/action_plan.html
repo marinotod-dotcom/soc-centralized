@@ -42,16 +42,20 @@
   <div id="emptyReason" style="margin-top:8px; font-size:12px;"></div>
 </div>
 
-<div id="date-picker" class="date-picker">
-  <div class="date-picker-header">
-    <button id="prev-month" type="button">‹</button>
-    <span id="current-month-label"></span>
-    <button id="next-month" type="button">›</button>
+<button id="toggleCalendarBtn" type="button">Choisir une date</button>
+
+<div id="date-picker-wrapper" hidden>
+  <div id="date-picker" class="date-picker">
+    <div class="date-picker-header">
+      <button id="prev-month" type="button">‹</button>
+      <span id="current-month-label"></span>
+      <button id="next-month" type="button">›</button>
+    </div>
+    <div class="date-picker-weekdays">
+      <div>L</div><div>M</div><div>M</div><div>J</div><div>V</div><div>S</div><div>D</div>
+    </div>
+    <div id="date-picker-grid" class="date-picker-grid"></div>
   </div>
-  <div class="date-picker-weekdays">
-    <div>L</div><div>M</div><div>M</div><div>J</div><div>V</div><div>S</div><div>D</div>
-  </div>
-  <div id="date-picker-grid" class="date-picker-grid"></div>
 </div>
 
 <div id="content" style="display:none;">

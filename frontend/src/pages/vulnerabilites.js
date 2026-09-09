@@ -16,7 +16,9 @@ let agentSort = { key: 'cve_count', dir: -1 };
 let meta = {};
 let carouselResizeHandler = null;
 let carouselAutoPlayInterval = null;
+
 let currentDay = null;
+let calendar = null;
 
 let currentUser = null;
 let vulnStatusMap = new Map();
@@ -74,6 +76,7 @@ async function loadData(day = currentDay) {
     renderPeriod();
     renderRemediations();
     renderTab();
+    calendar?.setSelectedDate(day);
 
   } catch (err) {
     emptyState.style.display = 'block';
@@ -848,13 +851,28 @@ document.querySelector('#vulnModal .modal-head button').addEventListener('click'
 document.getElementById('modalSearch').addEventListener('input', filterModalRows);
 document.getElementById('modalStatusFilter').addEventListener('change', filterModalRows);
 
-highlightActiveNav();
-initThemeToggle();
-const calendar = new DailyActionPlanCalendar({
+calendar = new DailyActionPlanCalendar({
   containerId: 'date-picker',
   onDateSelect: (day) => loadData(day),
 });
 
+const toggleBtn = document.getElementById('toggleCalendarBtn');
+const wrapper = document.getElementById('date-picker-wrapper');
+
+toggleBtn.addEventListener('click', async () => {
+  const willOpen = wrapper.hidden;
+
+  if (willOpen) {
+    toggleBtn.disabled = true;
+    await calendar.ensureLoaded();
+    calendar.setSelectedDate(currentDay);
+    toggleBtn.disabled = false;
+  }
+
+  wrapper.hidden = !willOpen;
+  toggleBtn.textContent = willOpen ? '✕ Fermer le calendrier' : '📅 Choisir une date';
+});
+
 highlightActiveNav();
 initThemeToggle();
-calendar.init();
+loadData();

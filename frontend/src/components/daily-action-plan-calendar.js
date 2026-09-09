@@ -6,9 +6,13 @@ export class DailyActionPlanCalendar {
     this.selectedDate = null;
     this.viewYear = null;
     this.viewMonth = null;
+    this.initialized = false;
   }
 
-  async init() {
+  // Appelé uniquement au premier clic sur le bouton "Choisir une date"
+  async ensureLoaded() {
+    if (this.initialized) return;
+
     let dates;
     try {
       const res = await fetch('/api/daily-action-plan/dates');
@@ -30,10 +34,17 @@ export class DailyActionPlanCalendar {
     const [y, m] = dates[0].split('-').map(Number);
     this.viewYear = y;
     this.viewMonth = m - 1;
+    this.initialized = true;
 
     this._bindNav();
     this._render();
-    await this._select(dates[0]);
+  }
+
+  // Aligne la sélection visuelle sur le jour actuellement affiché (ex: après latest.json),
+  // sans déclencher onDateSelect ni refetch.
+  setSelectedDate(day) {
+    this.selectedDate = day;
+    if (this.initialized) this._render();
   }
 
   _bindNav() {
