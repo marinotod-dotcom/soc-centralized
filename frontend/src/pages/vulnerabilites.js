@@ -2,6 +2,7 @@ import '../shared/theme.css';
 import { initThemeToggle } from '../shared/theme-toggle.js';
 import { highlightActiveNav } from '../shared/nav.js';
 import { escapeHtml } from '../shared/dom.js';
+import { DailyActionPlanCalendar } from '/src/components/daily-action-plan-calendar.js';
 
 const SEVERITY_COLOR = { Critical: 'var(--critical)', High: 'var(--high)', Medium: 'var(--medium)', Low: 'var(--low)' };
 const SEVERITY_WEIGHT = { Critical: 4, High: 3, Medium: 2, Low: 1 };
@@ -15,11 +16,14 @@ let agentSort = { key: 'cve_count', dir: -1 };
 let meta = {};
 let carouselResizeHandler = null;
 let carouselAutoPlayInterval = null;
+let currentDay = null;
 
 let currentUser = null;
 let vulnStatusMap = new Map();
 
-async function loadData() {
+async function loadData(day = currentDay) {
+  currentDay = day;
+
   const loadingState = document.getElementById('loadingState');
   const subtitle = document.getElementById('subtitle');
   const content = document.getElementById('content');
@@ -32,10 +36,12 @@ async function loadData() {
   emptyState.style.display = 'none';
 
   try {
+    const url = day
+      ? `/data/daily_action_plan/data_${day}.json`
+      : '/data/daily_action_plan/latest.json';
+
     const [res] = await Promise.all([
-      fetch('/data/daily_action_plan/latest.json', {
-        credentials: 'include',
-      }),
+      fetch(url, { credentials: 'include' }),
       fetchCurrentUser(),
     ]);
 
@@ -45,8 +51,7 @@ async function loadData() {
 
     const json = await res.json();
 
-    const buckets =
-      json?.aggregations?.vulnerabilities_by_agent?.buckets;
+    const buckets = json?.aggregations?.vulnerabilities_by_agent?.buckets;
 
     if (!buckets) {
       throw new Error(
@@ -73,10 +78,7 @@ async function loadData() {
   } catch (err) {
     emptyState.style.display = 'block';
     content.style.display = 'none';
-
-    document.getElementById('emptyReason').textContent =
-      err.message;
-
+    document.getElementById('emptyReason').textContent = err.message;
   } finally {
     loadingState.style.display = 'none';
   }
@@ -275,8 +277,13 @@ function transformBuckets(buckets) {
 }
 
 function renderPeriod() {
-  if (meta.date_from && meta.date_to) {
-    document.getElementById('period').textContent = `${meta.date_from.slice(0, 10)} → ${meta.date_to.slice(0, 10)}`;
+  const el = document.getElementById('period');
+  if (!el) return;
+
+  if (meta.collection_date) {
+    el.textContent = meta.collection_date;
+  } else if (meta.date_from && meta.date_to) {
+    el.textContent = `${meta.date_from.slice(0, 10)} → ${meta.date_to.slice(0, 10)}`;
   }
 }
 
@@ -843,4 +850,11 @@ document.getElementById('modalStatusFilter').addEventListener('change', filterMo
 
 highlightActiveNav();
 initThemeToggle();
-loadData();
+const calendar = new DailyActionPlanCalendar({
+  containerId: 'date-picker',
+  onDateSelect: (day) => loadData(day),
+});
+
+highlightActiveNav();
+initThemeToggle();
+calendar.init();

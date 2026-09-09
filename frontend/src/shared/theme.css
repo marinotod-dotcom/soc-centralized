@@ -685,3 +685,54 @@ a:hover { text-decoration:underline; }
 .landing-links a { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:20px; min-width:200px; display:block; color:var(--text); }
 .landing-links a:hover { border-color:var(--accent); text-decoration:none; }
 .landing-links a strong { display:block; color:var(--accent); margin-bottom:4px; }
+
+/* ---- Date picker */
+.date-picker {
+  max-width: 280px;
+  font-family: inherit;
+  user-select: none;
+}
+.date-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: .5rem;
+}
+.date-picker-header button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: .25rem .6rem;
+}
+.date-picker-weekdays,
+.date-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+}
+.date-picker-weekdays div {
+  font-size: .75rem;
+  color: #6b7280;
+  padding: .2rem 0;
+}
+.date-cell {
+  padding: .4rem 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: .85rem;
+}
+.date-cell:hover:not(.unavailable) {
+  background: #e5e7eb;
+}
+.date-cell.selected {
+  background: #2563eb;
+  color: #fff;
+}
+.date-cell.unavailable {
+  color: #cbd5e1;
+  cursor: not-allowed;
+}
