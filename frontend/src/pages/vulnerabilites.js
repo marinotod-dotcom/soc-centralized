@@ -853,24 +853,40 @@ document.getElementById('modalStatusFilter').addEventListener('change', filterMo
 
 calendar = new DailyActionPlanCalendar({
   containerId: 'date-picker',
-  onDateSelect: (day) => loadData(day),
+  onDateSelect: (day) => {
+    closeCalendar();
+    loadData(day);
+  },
 });
 
 const toggleBtn = document.getElementById('toggleCalendarBtn');
-const wrapper = document.getElementById('date-picker-wrapper');
+const picker = document.getElementById('date-picker');
 
-toggleBtn.addEventListener('click', async () => {
-  const willOpen = wrapper.hidden;
+function closeCalendar() {
+  picker.classList.remove('open');
+  toggleBtn.classList.remove('active');
+}
+
+toggleBtn.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  const willOpen = !picker.classList.contains('open');
 
   if (willOpen) {
     toggleBtn.disabled = true;
     await calendar.ensureLoaded();
     calendar.setSelectedDate(currentDay);
     toggleBtn.disabled = false;
+    picker.classList.add('open');
+    toggleBtn.classList.add('active');
+  } else {
+    closeCalendar();
   }
+});
 
-  wrapper.hidden = !willOpen;
-  toggleBtn.textContent = willOpen ? '✕ Fermer le calendrier' : '📅 Choisir une date';
+document.addEventListener('click', (e) => {
+  if (!picker.contains(e.target) && e.target !== toggleBtn) {
+    closeCalendar();
+  }
 });
 
 highlightActiveNav();
